@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   ArrowLeft, Play, Pause, SkipBack, SkipForward,
   Volume2, VolumeX, Maximize, Minimize, RefreshCw,
-  ChevronLeft, ChevronRight, ListMusic, X,
+  ChevronLeft, ChevronRight, ListMusic, X, Repeat,
 } from 'lucide-react';
 import type { Song } from '../App';
 import { getCurrentLineIndex } from '../../utils/lrcParser';
@@ -27,6 +27,7 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
   const [searchingLyrics, setSearchingLyrics] = useState(false);
   const [showImageLyrics, setShowImageLyrics] = useState(false);
   const [queue, setQueue] = useState<Song[]>([]);
+  const [autoplay, setAutoplay] = useState(true);
 
   const audioRef = useRef<HTMLAudioElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -37,11 +38,14 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
   const queueRef = useRef<Song[]>([]);
   const playlistRef = useRef<Song[]>([]);
   const currentSongRef = useRef<Song>(song);
+  const autoplayRef = useRef(true);          // mirror of autoplay state for use in event listeners
+  const shouldAutoplayRef = useRef(false);   // set by onEnd to trigger play on next song load
 
   // Keep refs in sync for use inside event listeners
   useEffect(() => { queueRef.current = queue; }, [queue]);
   useEffect(() => { playlistRef.current = playlist; }, [playlist]);
   useEffect(() => { currentSongRef.current = song; }, [song]);
+  useEffect(() => { autoplayRef.current = autoplay; }, [autoplay]);
 
   const hasSynced = song.syncedLyrics.length > 0;
   const hasPlain = song.lyrics.trim().length > 0;
@@ -107,7 +111,13 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
     if (!audio) return;
     const onTime = () => setCurrentTime(audio.currentTime);
     const onMeta = () => setDuration(audio.duration);
-    const onEnd = () => { setIsPlaying(false); goNext(); };
+    const onEnd = () => {
+      setIsPlaying(false);
+      const hasNext = queueRef.current.length > 0 ||
+        playlistRef.current.findIndex(s => s.id === currentSongRef.current.id) < playlistRef.current.length - 1;
+      if (autoplayRef.current && hasNext) shouldAutoplayRef.current = true;
+      goNext();
+    };
     audio.addEventListener('timeupdate', onTime);
     audio.addEventListener('loadedmetadata', onMeta);
     audio.addEventListener('ended', onEnd);
@@ -122,12 +132,27 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
     if (audioRef.current) audioRef.current.volume = muted ? 0 : volume;
   }, [volume, muted]);
 
-  // Reset on song change
+  // Reset on song change — and auto-start if flagged by onEnd
   useEffect(() => {
     setIsPlaying(false);
     setCurrentTime(0);
     lineRefs.current = [];
-    setShowImageLyrics(false);   // always reset to text-first on new song
+    setShowImageLyrics(false);
+
+    if (shouldAutoplayRef.current) {
+      shouldAutoplayRef.current = false;
+      const audio = audioRef.current;
+      if (!audio) return;
+      const startPlay = () => {
+        audio.play()
+          .then(() => setIsPlaying(true))
+          .catch(() => {}); // browser may block autoplay without interaction
+        audio.removeEventListener('canplay', startPlay);
+      };
+      // If audio is already ready (cached), play immediately; otherwise wait
+      if (audio.readyState >= 3) startPlay();
+      else audio.addEventListener('canplay', startPlay);
+    }
   }, [song.id]);
 
   // Wake Lock
@@ -330,6 +355,20 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
               onChange={e => { setVolume(Number(e.target.value)); setMuted(false); }}
               className="flex-1 h-2 bg-white/20 rounded-full appearance-none cursor-pointer accent-white" />
           </div>
+
+          {/* Autoplay toggle */}
+          <button
+            onClick={() => setAutoplay(a => !a)}
+            title={autoplay ? 'Autoplay on — click to turn off' : 'Autoplay off — click to turn on'}
+            className={`mt-3 w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all ${
+              autoplay
+                ? 'bg-pink-500/20 border border-pink-500/40 text-pink-300 hover:bg-pink-500/30'
+                : 'bg-white/5 border border-white/10 text-gray-500 hover:bg-white/10 hover:text-gray-300'
+            }`}
+          >
+            <Repeat className="w-4 h-4" />
+            Autoplay {autoplay ? 'On' : 'Off'}
+          </button>
         </div>
 
         {/* ── Centre panel — lyrics ── */}
