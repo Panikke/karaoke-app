@@ -127,6 +127,7 @@ export function BulkUploadDialog({ onClose, onUpload }: BulkUploadDialogProps) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveProgress, setSaveProgress] = useState<{ done: number; total: number } | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const audioRef = useRef<HTMLInputElement>(null);
   const lyricsRef = useRef<HTMLInputElement>(null);
 
@@ -246,6 +247,7 @@ export function BulkUploadDialog({ onClose, onUpload }: BulkUploadDialogProps) {
   const handleSubmit = async () => {
     if (!items.length) return;
     setSaving(true);
+    setUploadError(null);
     setSaveProgress({ done: 0, total: items.length });
     const payloads: SongUploadPayload[] = items.map(it => ({
       trackNumber: it.trackNumber,
@@ -258,10 +260,17 @@ export function BulkUploadDialog({ onClose, onUpload }: BulkUploadDialogProps) {
       audioFile: it.file,
       lyricsImageFile: it.lyricsImageFile,
     }));
-    await onUpload(payloads, (done, total) => setSaveProgress({ done, total }));
-    setSaving(false);
-    setSaveProgress(null);
-    onClose();
+    try {
+      await onUpload(payloads, (done, total) => setSaveProgress({ done, total }));
+      onClose();
+    } catch (err) {
+      setUploadError(
+        err instanceof Error ? err.message : 'Upload failed — check that you are signed in and the server is reachable.'
+      );
+    } finally {
+      setSaving(false);
+      setSaveProgress(null);
+    }
   };
 
   const statusIcon = (s: LyricsStatus) => {
@@ -417,7 +426,14 @@ export function BulkUploadDialog({ onClose, onUpload }: BulkUploadDialogProps) {
         </div>
 
         {/* Footer */}
-        <div className="border-t border-white/10 px-6 py-4 flex gap-3 flex-shrink-0">
+        <div className="border-t border-white/10 px-6 py-4 flex flex-col gap-3 flex-shrink-0">
+          {uploadError && (
+            <div className="flex items-start gap-2 px-4 py-3 bg-red-900/40 border border-red-500/50 rounded-xl text-sm text-red-300">
+              <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <span>{uploadError}</span>
+            </div>
+          )}
+          <div className="flex gap-3">
           <button onClick={onClose} className="flex-1 px-6 py-3 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors">
             Cancel
           </button>
@@ -431,6 +447,7 @@ export function BulkUploadDialog({ onClose, onUpload }: BulkUploadDialogProps) {
               : `Add ${items.length} Song${items.length !== 1 ? 's' : ''} to Library`
             }
           </button>
+          </div>
         </div>
       </div>
     </div>
