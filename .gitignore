@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.pnpm-store/
+
+# Environment — contains Supabase keys, never commit
+.env
+.env.*
+
+# Safe to commit — example template only
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db

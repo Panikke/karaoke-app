@@ -6,6 +6,7 @@ const STORE = 'songs';
 
 export interface StoredSong {
   id: string;
+  trackNumber?: string;   // e.g. "001" — preserved from filename
   title: string;
   artist: string;
   language: string;
