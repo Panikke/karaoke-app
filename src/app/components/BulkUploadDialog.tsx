@@ -13,6 +13,7 @@ type LyricsStatus = 'pending' | 'searching' | 'found' | 'not-found' | 'manual' |
 
 interface UploadItem {
   file: File;
+  trackNumber?: string;   // preserved from filename, e.g. "001"
   title: string;
   artist: string;
   lyrics: string;
@@ -34,11 +35,10 @@ function leadingNumber(name: string) {
 // Minimal ID3v2 tag reader — no external dependencies
 async function readId3Tags(file: File): Promise<{ title?: string; artist?: string }> {
   try {
-    const buf = await file.slice(0, 131072).arrayBuffer(); // read first 128 KB
+    const buf = await file.slice(0, 131072).arrayBuffer();
     const b = new Uint8Array(buf);
-    if (b[0] !== 0x49 || b[1] !== 0x44 || b[2] !== 0x33) return {}; // no ID3 header
-    const v = b[3]; // major version: 3 = ID3v2.3, 4 = ID3v2.4
-    // Syncsafe tag size
+    if (b[0] !== 0x49 || b[1] !== 0x44 || b[2] !== 0x33) return {};
+    const v = b[3];
     const tagSize = ((b[6] & 0x7f) << 21) | ((b[7] & 0x7f) << 14) | ((b[8] & 0x7f) << 7) | (b[9] & 0x7f);
     const hasExtHeader = !!(b[5] & 0x40);
     let pos = 10;
@@ -76,35 +76,54 @@ async function readId3Tags(file: File): Promise<{ title?: string; artist?: strin
   } catch { return {}; }
 }
 
-/** Remove leading track numbers: "01_", "1 - ", "02. " etc. */
-function stripTrackNum(s: string): string {
-  return s.replace(/^\d+[\s_\-\.]+/, '').trim();
-}
-
-async function readMetadata(file: File) {
-  const tags = await readId3Tags(file);
-  if (tags.title) {
-    return {
-      title: stripTrackNum(tags.title),
-      artist: stripTrackNum(tags.artist || 'Unknown Artist'),
-    };
-  }
-  // Fall back to filename: "01_Artist - Title.mp3" or "Artist - Title.mp3"
-  const base = stripTrackNum(stripExt(file.name));
-  const parts = base.split(/\s[-–]\s/).map(p => p.trim());
-  return parts.length >= 2
-    ? { artist: parts[0], title: parts.slice(1).join(' - ') }
-    : { title: base, artist: 'Unknown Artist' };
-}
-
 function stripExt(name: string) {
   return name.replace(/\.[^/.]+$/, '');
+}
+
+/**
+ * Parse a filename like "001_Title - Artist.wav" or "42 - Title - Artist.wav"
+ * Returns { trackNumber, title, artist }.
+ * Format: NUMBER[_\s\-\.]+Title - Artist
+ *         or just Title - Artist (no number)
+ */
+function parseFilename(filename: string): { trackNumber?: string; title: string; artist: string } {
+  const base = stripExt(filename);
+
+  // Extract leading number prefix: digits followed by _ or spaces/dashes
+  const numMatch = base.match(/^(\d+)[_\s\-\.]+(.+)$/);
+  const trackNumber = numMatch ? numMatch[1] : undefined;
+  const remainder = numMatch ? numMatch[2] : base;
+
+  // Split "Title - Artist" on ` - ` or ` – `
+  const parts = remainder.split(/\s[-–]\s/).map(p => p.trim());
+  if (parts.length >= 2) {
+    return {
+      trackNumber,
+      title: parts[0],
+      artist: parts.slice(1).join(' - '),
+    };
+  }
+  return { trackNumber, title: remainder, artist: 'Unknown Artist' };
+}
+
+async function readMetadata(file: File): Promise<{ trackNumber?: string; title: string; artist: string }> {
+  const tags = await readId3Tags(file);
+  if (tags.title) {
+    // ID3 tags present — use them, but still try to get track number from filename
+    const { trackNumber } = parseFilename(file.name);
+    // Strip any embedded track numbers from ID3 title/artist fields
+    const cleanTitle = tags.title.replace(/^\d+[\s_\-\.]+/, '').trim();
+    const cleanArtist = (tags.artist || 'Unknown Artist').replace(/^\d+[\s_\-\.]+/, '').trim();
+    return { trackNumber, title: cleanTitle, artist: cleanArtist };
+  }
+  // Fall back to filename parsing
+  return parseFilename(file.name);
 }
 
 export function BulkUploadDialog({ onClose, onUpload }: BulkUploadDialogProps) {
   const [items, setItems] = useState<UploadItem[]>([]);
   const [lyricsFiles, setLyricsFiles] = useState<File[]>([]);
-  const [language, setLanguage] = useState('English');
+  const [language, setLanguage] = useState('Greek (Ελληνικά)');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveProgress, setSaveProgress] = useState<{ done: number; total: number } | null>(null);
@@ -119,8 +138,15 @@ export function BulkUploadDialog({ onClose, onUpload }: BulkUploadDialogProps) {
     setLoading(true);
     const draft: UploadItem[] = [];
     for (const file of files) {
-      const { title, artist } = await readMetadata(file);
-      draft.push({ file, title, artist, lyrics: '', syncedLyrics: [], lyricsSource: 'none', status: 'pending', editing: false });
+      const { trackNumber, title, artist } = await readMetadata(file);
+      draft.push({
+        file, trackNumber, title, artist,
+        lyrics: '', syncedLyrics: [], lyricsSource: 'none', status: 'pending', editing: false,
+      });
+    }
+    // Sort by track number numerically if all have one
+    if (draft.every(d => d.trackNumber)) {
+      draft.sort((a, b) => parseInt(a.trackNumber!) - parseInt(b.trackNumber!));
     }
     setItems(draft);
     setLoading(false);
@@ -130,7 +156,6 @@ export function BulkUploadDialog({ onClose, onUpload }: BulkUploadDialogProps) {
     setLyricsFiles(Array.from(e.target.files ?? []));
   }, []);
 
-  // Match .txt/.lrc files to audio by filename
   const matchFromFiles = useCallback(async () => {
     if (!lyricsFiles.length) return;
     setLoading(true);
@@ -150,10 +175,9 @@ export function BulkUploadDialog({ onClose, onUpload }: BulkUploadDialogProps) {
       if (/\.(jpg|jpeg|png|webp|gif)$/i.test(match.name)) {
         return { ...item, lyricsImageFile: match, status: 'file' as LyricsStatus };
       }
-      return item; // text files handled async below
+      return item;
     }));
 
-    // Read text/lrc files
     const updates: { idx: number; lyrics: string; synced: import('../../utils/lrcParser').LyricLine[]; source: SongUploadPayload['lyricsSource'] }[] = [];
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
@@ -224,6 +248,7 @@ export function BulkUploadDialog({ onClose, onUpload }: BulkUploadDialogProps) {
     setSaving(true);
     setSaveProgress({ done: 0, total: items.length });
     const payloads: SongUploadPayload[] = items.map(it => ({
+      trackNumber: it.trackNumber,
       title: it.title,
       artist: it.artist,
       language,
@@ -256,6 +281,7 @@ export function BulkUploadDialog({ onClose, onUpload }: BulkUploadDialogProps) {
   }[s]);
 
   const readyCount = items.filter(it => it.lyrics.trim() || it.lyricsImageFile).length;
+  const numberedCount = items.filter(it => it.trackNumber).length;
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -284,6 +310,11 @@ export function BulkUploadDialog({ onClose, onUpload }: BulkUploadDialogProps) {
                   {items.length ? `${items.length} audio files selected` : 'Select MP3 / WAV files'}
                 </span>
               </button>
+              {numberedCount > 0 && (
+                <p className="mt-1.5 text-xs text-purple-300">
+                  {numberedCount}/{items.length} files have track numbers — numbers will be shown before the title
+                </p>
+              )}
             </div>
 
             <div>
@@ -306,7 +337,7 @@ export function BulkUploadDialog({ onClose, onUpload }: BulkUploadDialogProps) {
             <label className="block text-sm text-gray-300 mb-2 font-medium">Language for all songs</label>
             <select value={language} onChange={e => setLanguage(e.target.value)}
               className="px-4 py-2.5 bg-black/30 border border-white/20 rounded-lg text-white focus:outline-none focus:border-purple-500">
-              {['English','Greek (Ελληνικά)','Spanish','French','German','Italian','Portuguese','Japanese','Korean','Mandarin'].map(l =>
+              {['Greek (Ελληνικά)','English','Spanish','French','German','Italian','Portuguese','Japanese','Korean','Mandarin'].map(l =>
                 <option key={l} value={l}>{l}</option>
               )}
             </select>
@@ -340,12 +371,17 @@ export function BulkUploadDialog({ onClose, onUpload }: BulkUploadDialogProps) {
                     <div className="flex items-start gap-3">
                       {statusIcon(item.status)}
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 mb-0.5">
-                          <span className="font-medium truncate">{item.title}</span>
+                        <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                          <span className="font-medium truncate">
+                            {item.trackNumber && (
+                              <span className="font-mono text-purple-300 mr-1">{item.trackNumber}</span>
+                            )}
+                            {item.title}
+                          </span>
                           <span className="text-xs px-2 py-0.5 bg-white/10 rounded-full text-gray-400 flex-shrink-0">{statusLabel(item.status)}</span>
                           {item.syncedLyrics.length > 0 && <span className="text-xs px-2 py-0.5 bg-pink-500/20 text-pink-300 rounded-full flex-shrink-0">Synced</span>}
                         </div>
-                        <p className="text-sm text-gray-400">{item.artist} · {item.file.name}</p>
+                        <p className="text-sm text-gray-400">{item.artist} · <span className="text-gray-500">{item.file.name}</span></p>
 
                         {item.lyricsImageFile && (
                           <p className="text-xs text-emerald-400 mt-1">🖼 Image: {item.lyricsImageFile.name}</p>

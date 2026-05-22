@@ -4,13 +4,17 @@ import { KaraokePlayer } from './components/KaraokePlayer';
 import { BulkUploadDialog } from './components/BulkUploadDialog';
 import { BulkImageDialog } from './components/BulkImageDialog';
 import { EditSongDialog } from './components/EditSongDialog';
-import { Music, FolderUp, Images } from 'lucide-react';
+import { LoginPage } from './components/LoginPage';
+import { AdminDashboard } from './components/AdminDashboard';
+import { Music, FolderUp, Images, LogIn, LogOut, Shield, User } from 'lucide-react';
 import type { LyricLine } from '../utils/lrcParser';
 import { dbSave, dbLoadAll, dbDelete, dbDeleteAll, dbUpdate } from '../utils/storage';
 import { searchLyrics } from '../utils/lyricsApi';
+import { useAuth } from './hooks/useAuth';
 
 export interface Song {
   id: string;
+  trackNumber?: string;   // e.g. "001"
   title: string;
   artist: string;
   audioUrl: string;
@@ -23,6 +27,7 @@ export interface Song {
 }
 
 export interface SongUploadPayload {
+  trackNumber?: string;
   title: string;
   artist: string;
   language: string;
@@ -41,12 +46,17 @@ export default function App() {
   const [showBulkImages, setShowBulkImages] = useState(false);
   const [editingSong, setEditingSong] = useState<Song | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showLogin, setShowLogin] = useState(false);
+  const [showAdmin, setShowAdmin] = useState(false);
+
+  const { user, profile, loading: authLoading, isAdmin, canEditPlaylist, signOut } = useAuth();
 
   // Load persisted songs from IndexedDB on mount
   useEffect(() => {
     dbLoadAll().then(stored => {
       const loaded: Song[] = stored.map(s => ({
         id: s.id,
+        trackNumber: s.trackNumber,
         title: s.title,
         artist: s.artist,
         language: s.language,
@@ -69,13 +79,29 @@ export default function App() {
       const audioUrl = URL.createObjectURL(p.audioFile);
       const lyricsImageUrl = p.lyricsImageFile ? URL.createObjectURL(p.lyricsImageFile) : undefined;
       await dbSave({
-        id, title: p.title, artist: p.artist, language: p.language,
-        lyrics: p.lyrics, syncedLyrics: p.syncedLyrics, lyricsSource: p.lyricsSource,
-        audioBlob: p.audioFile, lyricsImageBlob: p.lyricsImageFile,
+        id,
+        trackNumber: p.trackNumber,
+        title: p.title,
+        artist: p.artist,
+        language: p.language,
+        lyrics: p.lyrics,
+        syncedLyrics: p.syncedLyrics,
+        lyricsSource: p.lyricsSource,
+        audioBlob: p.audioFile,
+        lyricsImageBlob: p.lyricsImageFile,
       });
-      newSongs.push({ id, title: p.title, artist: p.artist, language: p.language,
-        lyrics: p.lyrics, syncedLyrics: p.syncedLyrics, lyricsSource: p.lyricsSource,
-        audioUrl, lyricsImageUrl });
+      newSongs.push({
+        id,
+        trackNumber: p.trackNumber,
+        title: p.title,
+        artist: p.artist,
+        language: p.language,
+        lyrics: p.lyrics,
+        syncedLyrics: p.syncedLyrics,
+        lyricsSource: p.lyricsSource,
+        audioUrl,
+        lyricsImageUrl,
+      });
     }
     setSongs(prev => [...prev, ...newSongs]);
     setPlaylistIds(prev => {
@@ -156,7 +182,6 @@ export default function App() {
     });
   }, []);
 
-  // Bulk lyrics search — called from SongLibrary with an array of song IDs
   const bulkSearchLyrics = useCallback(async (ids: string[]) => {
     for (const id of ids) {
       const song = songs.find(s => s.id === id);
@@ -170,10 +195,10 @@ export default function App() {
 
   const playlist = songs.filter(s => playlistIds.has(s.id));
 
-  if (loading) {
+  if (loading || authLoading) {
     return (
       <div className="size-full bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center">
-        <div className="text-white text-2xl">Loading library…</div>
+        <div className="text-white text-2xl">Loading…</div>
       </div>
     );
   }
@@ -200,21 +225,62 @@ export default function App() {
                   <span className="text-xs text-yellow-400 flex-shrink-0">{playlistIds.size} in playlist</span>
                 )}
               </div>
-              <div className="flex gap-3 flex-shrink-0">
-                <button
-                  onClick={() => setShowBulkImages(true)}
-                  className="px-5 py-3 min-h-[48px] bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl hover:from-emerald-600 hover:to-teal-600 transition-all flex items-center gap-2 font-medium"
-                >
-                  <Images className="w-5 h-5" />
-                  <span className="hidden sm:inline">Bulk Add Images</span>
-                </button>
-                <button
-                  onClick={() => setShowBulkUpload(true)}
-                  className="px-5 py-3 min-h-[48px] bg-gradient-to-r from-blue-500 to-cyan-500 rounded-xl hover:from-blue-600 hover:to-cyan-600 transition-all flex items-center gap-2 font-medium"
-                >
-                  <FolderUp className="w-5 h-5" />
-                  <span className="hidden sm:inline">Bulk Upload Songs</span>
-                </button>
+
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {/* Admin controls — only shown when logged in with edit permission */}
+                {user && canEditPlaylist && (
+                  <>
+                    <button
+                      onClick={() => setShowBulkImages(true)}
+                      className="px-4 py-2.5 min-h-[44px] bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl hover:from-emerald-600 hover:to-teal-600 transition-all flex items-center gap-2 font-medium text-sm"
+                    >
+                      <Images className="w-4 h-4" />
+                      <span className="hidden md:inline">Bulk Images</span>
+                    </button>
+                    <button
+                      onClick={() => setShowBulkUpload(true)}
+                      className="px-4 py-2.5 min-h-[44px] bg-gradient-to-r from-blue-500 to-cyan-500 rounded-xl hover:from-blue-600 hover:to-cyan-600 transition-all flex items-center gap-2 font-medium text-sm"
+                    >
+                      <FolderUp className="w-4 h-4" />
+                      <span className="hidden md:inline">Upload Songs</span>
+                    </button>
+                  </>
+                )}
+
+                {/* Admin panel button */}
+                {user && isAdmin && (
+                  <button
+                    onClick={() => setShowAdmin(true)}
+                    className="px-4 py-2.5 min-h-[44px] bg-purple-600/40 hover:bg-purple-600/60 border border-purple-500/40 rounded-xl flex items-center gap-2 text-sm font-medium transition-all"
+                  >
+                    <Shield className="w-4 h-4 text-purple-300" />
+                    <span className="hidden sm:inline text-purple-300">Admin</span>
+                  </button>
+                )}
+
+                {/* Auth button */}
+                {user ? (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-400 hidden sm:block truncate max-w-[100px]">
+                      {profile?.display_name || user.email?.split('@')[0]}
+                    </span>
+                    <button
+                      onClick={signOut}
+                      title="Sign out"
+                      className="p-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors"
+                    >
+                      <LogOut className="w-4 h-4 text-gray-400" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setShowLogin(true)}
+                    className="flex items-center gap-2 px-4 py-2.5 min-h-[44px] bg-white/5 hover:bg-white/10 border border-white/20 rounded-xl text-sm transition-colors"
+                  >
+                    <LogIn className="w-4 h-4" />
+                    <span className="hidden sm:inline">Sign In</span>
+                  </button>
+                )}
               </div>
             </div>
           </header>
@@ -222,6 +288,7 @@ export default function App() {
           <SongLibrary
             songs={songs}
             playlistIds={playlistIds}
+            canEdit={!!canEditPlaylist}
             onSelectSong={setCurrentSong}
             onDeleteSong={deleteSong}
             onEditSong={setEditingSong}
@@ -242,6 +309,12 @@ export default function App() {
       )}
       {editingSong && (
         <EditSongDialog song={editingSong} onClose={() => setEditingSong(null)} onSave={updateSong} />
+      )}
+      {showLogin && (
+        <LoginPage onClose={() => setShowLogin(false)} />
+      )}
+      {showAdmin && isAdmin && (
+        <AdminDashboard onClose={() => setShowAdmin(false)} />
       )}
     </div>
   );

@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
+import Fuse from 'fuse.js';
 import { Search, Play, Trash2, Music2, Pencil, ListMusic, ListX, CheckSquare, Square, RefreshCw, Loader2, AlertTriangle } from 'lucide-react';
 import type { Song } from '../App';
 import { MissingLyricsPanel } from './MissingLyricsPanel';
@@ -8,6 +9,7 @@ import type { LyricLine } from '../../utils/lrcParser';
 interface SongLibraryProps {
   songs: Song[];
   playlistIds: Set<string>;
+  canEdit: boolean;
   onSelectSong: (song: Song) => void;
   onDeleteSong: (id: string) => void;
   onEditSong: (song: Song) => void;
@@ -26,7 +28,7 @@ const lyricsBadge = (song: Song) => {
 };
 
 export function SongLibrary({
-  songs, playlistIds, onSelectSong, onDeleteSong, onEditSong,
+  songs, playlistIds, canEdit, onSelectSong, onDeleteSong, onEditSong,
   onTogglePlaylist, onSearchLyrics, onClearLibrary, onUpdateLyrics, onAssignLyricsImage,
 }: SongLibraryProps) {
   const [query, setQuery] = useState('');
@@ -36,13 +38,38 @@ export function SongLibrary({
   const [confirmClear, setConfirmClear] = useState(false);
   const [manualSong, setManualSong] = useState<Song | null>(null);
 
-  // Songs with no text lyrics at all (synced or plain) — shown in Missing Lyrics panel
+  // Songs with no text lyrics — shown in Missing Lyrics panel
   const missingSongs = songs.filter(s => s.syncedLyrics.length === 0 && !s.lyrics.trim());
 
-  const filtered = songs.filter(s => {
-    const q = query.toLowerCase();
-    return !q || s.title.toLowerCase().includes(q) || s.artist.toLowerCase().includes(q) || s.language.toLowerCase().includes(q);
-  });
+  // ── Fuse.js fuzzy search ─────────────────────────────────────────────────
+  const fuse = useMemo(() => new Fuse(songs, {
+    keys: [
+      { name: 'title',       weight: 0.5 },
+      { name: 'artist',      weight: 0.35 },
+      { name: 'trackNumber', weight: 0.1 },
+      { name: 'language',    weight: 0.05 },
+    ],
+    threshold: 0.4,        // 0 = exact, 1 = match anything
+    ignoreLocation: true,  // match anywhere in the string, not just at the start
+    includeScore: true,
+    useExtendedSearch: false,
+    minMatchCharLength: 1,
+  }), [songs]);
+
+  const filtered = useMemo(() => {
+    const q = query.trim();
+    if (!q) {
+      // No search — sort by track number, then alphabetically
+      return [...songs].sort((a, b) => {
+        const na = a.trackNumber ? parseInt(a.trackNumber) : Infinity;
+        const nb = b.trackNumber ? parseInt(b.trackNumber) : Infinity;
+        if (na !== nb) return na - nb;
+        return a.title.localeCompare(b.title);
+      });
+    }
+    // Fuzzy search — return sorted by relevance score
+    return fuse.search(q).map(r => r.item);
+  }, [songs, query, fuse]);
 
   const allFilteredSelected = filtered.length > 0 && filtered.every(s => selectedIds.has(s.id));
 
@@ -75,7 +102,6 @@ export function SongLibrary({
     setSearchingLyrics(true);
     setSearchProgress({ done: 0, total: ids.length });
     let done = 0;
-    // Search in small batches to keep UI responsive
     for (const id of ids) {
       await onSearchLyrics([id]);
       done++;
@@ -105,29 +131,46 @@ export function SongLibrary({
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
           <input
             type="text"
-            placeholder="Search by title, artist, or language…"
+            placeholder="Search by title, artist, track number…"
             value={query}
             onChange={e => setQuery(e.target.value)}
             className="w-full pl-11 pr-4 py-3 bg-black/30 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-purple-500"
           />
+          {query && (
+            <button
+              onClick={() => setQuery('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white text-lg leading-none"
+            >
+              ×
+            </button>
+          )}
         </div>
 
-        {/* Select All toggle */}
-        <button
-          onClick={toggleSelectAll}
-          className="flex items-center gap-2 px-4 py-3 bg-black/30 border border-white/20 hover:border-purple-500/50 rounded-xl text-sm transition-colors"
-        >
-          {allFilteredSelected
-            ? <CheckSquare className="w-4 h-4 text-purple-400" />
-            : <Square className="w-4 h-4 text-gray-400" />
-          }
-          <span className="text-gray-300 hidden sm:inline">
-            {allFilteredSelected ? 'Deselect All' : 'Select All'}
+        {/* Fuzzy match hint */}
+        {query && filtered.length > 0 && (
+          <span className="text-xs text-gray-500 hidden sm:block">
+            {filtered.length} match{filtered.length !== 1 ? 'es' : ''} (nearest first)
           </span>
-        </button>
+        )}
+
+        {/* Select All toggle */}
+        {canEdit && (
+          <button
+            onClick={toggleSelectAll}
+            className="flex items-center gap-2 px-4 py-3 bg-black/30 border border-white/20 hover:border-purple-500/50 rounded-xl text-sm transition-colors"
+          >
+            {allFilteredSelected
+              ? <CheckSquare className="w-4 h-4 text-purple-400" />
+              : <Square className="w-4 h-4 text-gray-400" />
+            }
+            <span className="text-gray-300 hidden sm:inline">
+              {allFilteredSelected ? 'Deselect All' : 'Select All'}
+            </span>
+          </button>
+        )}
 
         {/* Bulk lyrics search */}
-        {selectedCount > 0 && (
+        {canEdit && selectedCount > 0 && (
           <button
             onClick={handleBulkSearchLyrics}
             disabled={searchingLyrics}
@@ -147,7 +190,7 @@ export function SongLibrary({
         )}
 
         {/* Clear library */}
-        {songs.length > 0 && (
+        {canEdit && songs.length > 0 && (
           confirmClear ? (
             <div className="flex items-center gap-2 px-4 py-3 bg-red-900/40 border border-red-500/50 rounded-xl text-sm">
               <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0" />
@@ -172,7 +215,19 @@ export function SongLibrary({
         {filtered.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center gap-4 text-gray-400">
             <Music2 className="w-16 h-16 opacity-20" />
-            <p className="text-xl">{songs.length === 0 ? 'No songs yet — click Bulk Upload Songs to start' : 'No results'}</p>
+            <p className="text-xl">
+              {songs.length === 0
+                ? 'No songs yet — sign in and click Upload Songs to start'
+                : query
+                ? `No matches for "${query}"`
+                : 'No results'
+              }
+            </p>
+            {query && (
+              <button onClick={() => setQuery('')} className="text-sm text-purple-400 hover:text-purple-300">
+                Clear search
+              </button>
+            )}
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-4">
@@ -192,16 +247,18 @@ export function SongLibrary({
                   }`}
                   onClick={() => onSelectSong(song)}
                 >
-                  {/* Selection checkbox */}
-                  <button
-                    onClick={e => { e.stopPropagation(); toggleSelect(song.id); }}
-                    className="absolute top-2 left-2 z-10 p-1"
-                  >
-                    {isSelected
-                      ? <CheckSquare className="w-4 h-4 text-purple-400" />
-                      : <Square className="w-4 h-4 text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity" />
-                    }
-                  </button>
+                  {/* Selection checkbox — only for editors */}
+                  {canEdit && (
+                    <button
+                      onClick={e => { e.stopPropagation(); toggleSelect(song.id); }}
+                      className="absolute top-2 left-2 z-10 p-1"
+                    >
+                      {isSelected
+                        ? <CheckSquare className="w-4 h-4 text-purple-400" />
+                        : <Square className="w-4 h-4 text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      }
+                    </button>
+                  )}
 
                   {/* Cover art */}
                   <div className="relative h-40 bg-gradient-to-br from-purple-900/40 to-blue-900/40 flex items-center justify-center rounded-t-xl overflow-hidden">
@@ -209,6 +266,7 @@ export function SongLibrary({
                       ? <img src={song.coverArtUrl} alt={song.title} className="w-full h-full object-cover" />
                       : <span className="text-5xl opacity-30">🎵</span>
                     }
+
 
                     {/* Play overlay */}
                     <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
@@ -229,41 +287,46 @@ export function SongLibrary({
                       </span>
                     )}
 
-                    {/* Action buttons row */}
-                    <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                      {/* Edit */}
-                      <button
-                        onClick={e => { e.stopPropagation(); onEditSong(song); }}
-                        className="p-1.5 bg-black/60 hover:bg-blue-500/80 rounded-lg transition-colors"
-                        title="Edit song info"
-                      >
-                        <Pencil className="w-3.5 h-3.5 text-white" />
-                      </button>
-                      {/* Playlist toggle */}
-                      <button
-                        onClick={e => { e.stopPropagation(); onTogglePlaylist(song.id); }}
-                        className={`p-1.5 rounded-lg transition-colors ${inPlaylist ? 'bg-black/60 hover:bg-yellow-500/80' : 'bg-green-600/80 hover:bg-green-500'}`}
-                        title={inPlaylist ? 'Remove from playlist' : 'Add to playlist'}
-                      >
-                        {inPlaylist
-                          ? <ListX className="w-3.5 h-3.5 text-white" />
-                          : <ListMusic className="w-3.5 h-3.5 text-white" />
-                        }
-                      </button>
-                      {/* Delete */}
-                      <button
-                        onClick={e => { e.stopPropagation(); onDeleteSong(song.id); }}
-                        className="p-1.5 bg-black/60 hover:bg-red-500/80 rounded-lg transition-colors"
-                        title="Delete song"
-                      >
-                        <Trash2 className="w-3.5 h-3.5 text-white" />
-                      </button>
-                    </div>
+                    {/* Action buttons — only for editors */}
+                    {canEdit && (
+                      <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                        {/* Hide track number when hovered if present — shown via top-right overlay above */}
+                        <button
+                          onClick={e => { e.stopPropagation(); onEditSong(song); }}
+                          className="p-1.5 bg-black/60 hover:bg-blue-500/80 rounded-lg transition-colors"
+                          title="Edit song info"
+                        >
+                          <Pencil className="w-3.5 h-3.5 text-white" />
+                        </button>
+                        <button
+                          onClick={e => { e.stopPropagation(); onTogglePlaylist(song.id); }}
+                          className={`p-1.5 rounded-lg transition-colors ${inPlaylist ? 'bg-black/60 hover:bg-yellow-500/80' : 'bg-green-600/80 hover:bg-green-500'}`}
+                          title={inPlaylist ? 'Remove from playlist' : 'Add to playlist'}
+                        >
+                          {inPlaylist
+                            ? <ListX className="w-3.5 h-3.5 text-white" />
+                            : <ListMusic className="w-3.5 h-3.5 text-white" />
+                          }
+                        </button>
+                        <button
+                          onClick={e => { e.stopPropagation(); onDeleteSong(song.id); }}
+                          className="p-1.5 bg-black/60 hover:bg-red-500/80 rounded-lg transition-colors"
+                          title="Delete song"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-white" />
+                        </button>
+                      </div>
+                    )}
                   </div>
 
                   {/* Song info */}
                   <div className="p-3">
-                    <h3 className="font-semibold truncate text-sm">{song.title}</h3>
+                    <h3 className="font-semibold truncate text-sm">
+                      {song.trackNumber && (
+                        <span className="font-mono text-purple-300 mr-1">{song.trackNumber}</span>
+                      )}
+                      {song.title}
+                    </h3>
                     <p className="text-xs text-gray-400 truncate mt-0.5">{song.artist}</p>
                     <p className="text-xs text-gray-500 mt-0.5">{song.language}</p>
                   </div>
@@ -274,13 +337,15 @@ export function SongLibrary({
         )}
       </div>
 
-      {/* Missing Lyrics panel — collapsible, sits below the grid */}
-      <MissingLyricsPanel
-        songs={missingSongs}
-        onSearchOnline={handleMissingSearch}
-        onManualEdit={setManualSong}
-        onAssignImage={onAssignLyricsImage}
-      />
+      {/* Missing Lyrics panel — only visible to editors */}
+      {canEdit && (
+        <MissingLyricsPanel
+          songs={missingSongs}
+          onSearchOnline={handleMissingSearch}
+          onManualEdit={setManualSong}
+          onAssignImage={onAssignLyricsImage}
+        />
+      )}
 
       {/* Manual lyrics dialog */}
       {manualSong && (
