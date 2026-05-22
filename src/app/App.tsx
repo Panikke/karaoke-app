@@ -299,7 +299,12 @@ export default function App() {
         <BulkImageDialog songs={songs} onClose={() => setShowBulkImages(false)} onApply={updateCoverArt} />
       )}
       {editingSong && (
-        <EditSongDialog song={editingSong} onClose={() => setEditingSong(null)} onSave={updateSong} />
+        <EditSongDialog
+          song={editingSong}
+          onClose={() => setEditingSong(null)}
+          onSave={updateSong}
+          onAssignLyricsImage={updateLyricsImageFn}
+        />
       )}
       {showLogin && (
         <LoginPage onClose={() => setShowLogin(false)} />
