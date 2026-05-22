@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .pnpm-store/
+server/node_modules/
 
 # Environment — contains Supabase keys, never commit
 .env

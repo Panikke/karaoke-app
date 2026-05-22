@@ -6,24 +6,34 @@ import { BulkImageDialog } from './components/BulkImageDialog';
 import { EditSongDialog } from './components/EditSongDialog';
 import { LoginPage } from './components/LoginPage';
 import { AdminDashboard } from './components/AdminDashboard';
-import { Music, FolderUp, Images, LogIn, LogOut, Shield, User } from 'lucide-react';
+import { Music, FolderUp, Images, LogIn, LogOut, Shield, Loader2 } from 'lucide-react';
 import type { LyricLine } from '../utils/lrcParser';
-import { dbSave, dbLoadAll, dbDelete, dbDeleteAll, dbUpdate } from '../utils/storage';
-import { searchLyrics } from '../utils/lyricsApi';
 import { useAuth } from './hooks/useAuth';
+import {
+  fetchAllSongs,
+  updateSongLyrics,
+  updateSongMeta,
+  updateSongPlaylist,
+  uploadSongToServer,
+  uploadCoverArt,
+  uploadLyricsImage,
+  deleteSongFromServer,
+  clearLibraryOnServer,
+} from '../lib/songsApi';
 
 export interface Song {
   id: string;
-  trackNumber?: string;   // e.g. "001"
+  trackNumber?: string;
   title: string;
   artist: string;
-  audioUrl: string;
+  audioUrl: string;       // /audio/<uuid>.wav  — served by nginx
   lyrics: string;
   syncedLyrics: LyricLine[];
   lyricsSource: 'manual' | 'api' | 'file' | 'none';
   language: string;
   lyricsImageUrl?: string;
   coverArtUrl?: string;
+  inPlaylist: boolean;    // stored in Supabase — shared state
 }
 
 export interface SongUploadPayload {
@@ -39,150 +49,113 @@ export interface SongUploadPayload {
 }
 
 export default function App() {
-  const [songs, setSongs] = useState<Song[]>([]);
+  const [songs, setSongs]           = useState<Song[]>([]);
   const [currentSong, setCurrentSong] = useState<Song | null>(null);
-  const [playlistIds, setPlaylistIds] = useState<Set<string>>(new Set());
   const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [showBulkImages, setShowBulkImages] = useState(false);
-  const [editingSong, setEditingSong] = useState<Song | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [showLogin, setShowLogin] = useState(false);
-  const [showAdmin, setShowAdmin] = useState(false);
+  const [editingSong, setEditingSong]   = useState<Song | null>(null);
+  const [loading, setLoading]           = useState(true);
+  const [loadError, setLoadError]       = useState<string | null>(null);
+  const [showLogin, setShowLogin]       = useState(false);
+  const [showAdmin, setShowAdmin]       = useState(false);
 
   const { user, profile, loading: authLoading, isAdmin, canEditPlaylist, signOut } = useAuth();
 
-  // Load persisted songs from IndexedDB on mount
+  // ── Load songs from Supabase on mount ───────────────────────────────────────
   useEffect(() => {
-    dbLoadAll().then(stored => {
-      const loaded: Song[] = stored.map(s => ({
-        id: s.id,
-        trackNumber: s.trackNumber,
-        title: s.title,
-        artist: s.artist,
-        language: s.language,
-        lyrics: s.lyrics,
-        syncedLyrics: s.syncedLyrics,
-        lyricsSource: s.lyricsSource,
-        audioUrl: URL.createObjectURL(s.audioBlob),
-        lyricsImageUrl: s.lyricsImageBlob ? URL.createObjectURL(s.lyricsImageBlob) : undefined,
-        coverArtUrl: s.coverArtBlob ? URL.createObjectURL(s.coverArtBlob) : undefined,
-      }));
-      setSongs(loaded);
-      setPlaylistIds(new Set(loaded.map(s => s.id)));
-    }).finally(() => setLoading(false));
+    fetchAllSongs()
+      .then(setSongs)
+      .catch(err => setLoadError(String(err)))
+      .finally(() => setLoading(false));
   }, []);
 
-  const addSongs = useCallback(async (payloads: SongUploadPayload[]) => {
+  // ── Upload ──────────────────────────────────────────────────────────────────
+  const addSongs = useCallback(async (
+    payloads: SongUploadPayload[],
+    onProgress?: (done: number, total: number) => void,
+  ) => {
     const newSongs: Song[] = [];
-    for (const p of payloads) {
-      const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      const audioUrl = URL.createObjectURL(p.audioFile);
-      const lyricsImageUrl = p.lyricsImageFile ? URL.createObjectURL(p.lyricsImageFile) : undefined;
-      await dbSave({
-        id,
-        trackNumber: p.trackNumber,
-        title: p.title,
-        artist: p.artist,
-        language: p.language,
-        lyrics: p.lyrics,
-        syncedLyrics: p.syncedLyrics,
-        lyricsSource: p.lyricsSource,
-        audioBlob: p.audioFile,
-        lyricsImageBlob: p.lyricsImageFile,
-      });
-      newSongs.push({
-        id,
-        trackNumber: p.trackNumber,
-        title: p.title,
-        artist: p.artist,
-        language: p.language,
-        lyrics: p.lyrics,
-        syncedLyrics: p.syncedLyrics,
-        lyricsSource: p.lyricsSource,
-        audioUrl,
-        lyricsImageUrl,
-      });
+    for (let i = 0; i < payloads.length; i++) {
+      const song = await uploadSongToServer(payloads[i]);
+      newSongs.push(song);
+      onProgress?.(i + 1, payloads.length);
     }
     setSongs(prev => [...prev, ...newSongs]);
-    setPlaylistIds(prev => {
-      const next = new Set(prev);
-      newSongs.forEach(s => next.add(s.id));
-      return next;
-    });
   }, []);
 
+  // ── Delete ──────────────────────────────────────────────────────────────────
   const deleteSong = useCallback(async (id: string) => {
-    await dbDelete(id);
-    setSongs(prev => {
-      const song = prev.find(s => s.id === id);
-      if (song) {
-        URL.revokeObjectURL(song.audioUrl);
-        if (song.lyricsImageUrl) URL.revokeObjectURL(song.lyricsImageUrl);
-        if (song.coverArtUrl) URL.revokeObjectURL(song.coverArtUrl);
-      }
-      return prev.filter(s => s.id !== id);
-    });
-    setPlaylistIds(prev => { const n = new Set(prev); n.delete(id); return n; });
+    await deleteSongFromServer(id);
+    setSongs(prev => prev.filter(s => s.id !== id));
     if (currentSong?.id === id) setCurrentSong(null);
   }, [currentSong]);
 
+  // ── Clear library ───────────────────────────────────────────────────────────
   const clearLibrary = useCallback(async () => {
-    await dbDeleteAll();
-    setSongs(prev => {
-      prev.forEach(s => {
-        URL.revokeObjectURL(s.audioUrl);
-        if (s.lyricsImageUrl) URL.revokeObjectURL(s.lyricsImageUrl);
-        if (s.coverArtUrl) URL.revokeObjectURL(s.coverArtUrl);
-      });
-      return [];
-    });
-    setPlaylistIds(new Set());
+    await clearLibraryOnServer();
+    setSongs([]);
     setCurrentSong(null);
   }, []);
 
+  // ── Update cover art ────────────────────────────────────────────────────────
   const updateCoverArt = useCallback(async (songId: string, imageFile: File) => {
-    const coverArtUrl = URL.createObjectURL(imageFile);
-    await dbUpdate(songId, { coverArtBlob: imageFile });
-    setSongs(prev => prev.map(s => {
-      if (s.id !== songId) return s;
-      if (s.coverArtUrl) URL.revokeObjectURL(s.coverArtUrl);
-      return { ...s, coverArtUrl };
-    }));
+    const coverArtUrl = await uploadCoverArt(songId, imageFile);
+    setSongs(prev => prev.map(s => s.id === songId ? { ...s, coverArtUrl } : s));
     setCurrentSong(prev => prev?.id === songId ? { ...prev, coverArtUrl } : prev);
   }, []);
 
-  const updateLyrics = useCallback(async (songId: string, lyrics: string, syncedLyrics: LyricLine[], source: Song['lyricsSource']) => {
-    await dbUpdate(songId, { lyrics, syncedLyrics, lyricsSource: source });
-    setSongs(prev => prev.map(s => s.id === songId ? { ...s, lyrics, syncedLyrics, lyricsSource: source } : s));
-    setCurrentSong(prev => prev?.id === songId ? { ...prev, lyrics, syncedLyrics, lyricsSource: source } : prev);
+  // ── Update lyrics ───────────────────────────────────────────────────────────
+  const updateLyrics = useCallback(async (
+    songId: string,
+    lyrics: string,
+    syncedLyrics: LyricLine[],
+    source: Song['lyricsSource'],
+  ) => {
+    await updateSongLyrics(songId, lyrics, syncedLyrics, source);
+    setSongs(prev => prev.map(s =>
+      s.id === songId ? { ...s, lyrics, syncedLyrics, lyricsSource: source } : s,
+    ));
+    setCurrentSong(prev =>
+      prev?.id === songId ? { ...prev, lyrics, syncedLyrics, lyricsSource: source } : prev,
+    );
   }, []);
 
-  const updateLyricsImage = useCallback(async (songId: string, imageFile: File) => {
-    const lyricsImageUrl = URL.createObjectURL(imageFile);
-    await dbUpdate(songId, { lyricsImageBlob: imageFile });
-    setSongs(prev => prev.map(s => {
-      if (s.id !== songId) return s;
-      if (s.lyricsImageUrl) URL.revokeObjectURL(s.lyricsImageUrl);
-      return { ...s, lyricsImageUrl };
-    }));
+  // ── Update lyrics image ─────────────────────────────────────────────────────
+  const updateLyricsImageFn = useCallback(async (songId: string, imageFile: File) => {
+    const lyricsImageUrl = await uploadLyricsImage(songId, imageFile);
+    setSongs(prev => prev.map(s => s.id === songId ? { ...s, lyricsImageUrl } : s));
     setCurrentSong(prev => prev?.id === songId ? { ...prev, lyricsImageUrl } : prev);
   }, []);
 
-  const updateSong = useCallback(async (id: string, patch: { title: string; artist: string; language: string }) => {
-    await dbUpdate(id, patch);
+  // ── Update metadata ─────────────────────────────────────────────────────────
+  const updateSong = useCallback(async (
+    id: string,
+    patch: { title: string; artist: string; language: string },
+  ) => {
+    await updateSongMeta(id, patch);
     setSongs(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
     setCurrentSong(prev => prev?.id === id ? { ...prev, ...patch } : prev);
   }, []);
 
-  const togglePlaylist = useCallback((id: string) => {
-    setPlaylistIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  }, []);
+  // ── Playlist toggle ─────────────────────────────────────────────────────────
+  const togglePlaylist = useCallback(async (id: string) => {
+    const song = songs.find(s => s.id === id);
+    if (!song) return;
+    const next = !song.inPlaylist;
+    // Optimistic update
+    setSongs(prev => prev.map(s => s.id === id ? { ...s, inPlaylist: next } : s));
+    try {
+      await updateSongPlaylist(id, next);
+    } catch (err) {
+      // Revert on error
+      setSongs(prev => prev.map(s => s.id === id ? { ...s, inPlaylist: !next } : s));
+      console.error('Playlist toggle failed:', err);
+    }
+  }, [songs]);
 
+  // ── Lyrics search ───────────────────────────────────────────────────────────
   const bulkSearchLyrics = useCallback(async (ids: string[]) => {
+    const { searchLyrics } = await import('../utils/lyricsApi');
     for (const id of ids) {
       const song = songs.find(s => s.id === id);
       if (!song) continue;
@@ -193,12 +166,31 @@ export default function App() {
     }
   }, [songs, updateLyrics]);
 
-  const playlist = songs.filter(s => playlistIds.has(s.id));
+  const playlist = songs.filter(s => s.inPlaylist);
 
+  // ── Loading / error states ──────────────────────────────────────────────────
   if (loading || authLoading) {
     return (
-      <div className="size-full bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center">
-        <div className="text-white text-2xl">Loading…</div>
+      <div className="size-full bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center gap-3 text-white">
+        <Loader2 className="w-8 h-8 animate-spin text-pink-400" />
+        <span className="text-xl">Loading library…</span>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="size-full bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center p-8 text-white">
+        <div className="text-center max-w-md">
+          <p className="text-xl font-semibold text-red-400 mb-2">Could not load song library</p>
+          <p className="text-sm text-gray-300 mb-4">{loadError}</p>
+          <button
+            onClick={() => { setLoadError(null); setLoading(true); fetchAllSongs().then(setSongs).catch(e => setLoadError(String(e))).finally(() => setLoading(false)); }}
+            className="px-6 py-2 bg-purple-600 hover:bg-purple-700 rounded-xl text-sm"
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
   }
@@ -215,19 +207,21 @@ export default function App() {
         />
       ) : (
         <div className="size-full flex flex-col">
+          {/* ── Header ── */}
           <header className="bg-black/30 backdrop-blur-sm border-b border-white/10 px-6 py-4 flex-shrink-0">
             <div className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-3 min-w-0">
                 <Music className="w-8 h-8 text-pink-400 flex-shrink-0" />
                 <h1 className="text-2xl font-bold tracking-tight truncate">Karaoke</h1>
                 <span className="text-sm text-gray-400 flex-shrink-0">{songs.length} songs</span>
-                {playlistIds.size < songs.length && (
-                  <span className="text-xs text-yellow-400 flex-shrink-0">{playlistIds.size} in playlist</span>
+                {playlist.length < songs.length && (
+                  <span className="text-xs text-yellow-400 flex-shrink-0">
+                    {playlist.length} in playlist
+                  </span>
                 )}
               </div>
 
               <div className="flex items-center gap-2 flex-shrink-0">
-                {/* Admin controls — only shown when logged in with edit permission */}
                 {user && canEditPlaylist && (
                   <>
                     <button
@@ -247,7 +241,6 @@ export default function App() {
                   </>
                 )}
 
-                {/* Admin panel button */}
                 {user && isAdmin && (
                   <button
                     onClick={() => setShowAdmin(true)}
@@ -258,7 +251,6 @@ export default function App() {
                   </button>
                 )}
 
-                {/* Auth button */}
                 {user ? (
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-gray-400 hidden sm:block truncate max-w-[100px]">
@@ -287,7 +279,6 @@ export default function App() {
 
           <SongLibrary
             songs={songs}
-            playlistIds={playlistIds}
             canEdit={!!canEditPlaylist}
             onSelectSong={setCurrentSong}
             onDeleteSong={deleteSong}
@@ -296,7 +287,7 @@ export default function App() {
             onSearchLyrics={bulkSearchLyrics}
             onClearLibrary={clearLibrary}
             onUpdateLyrics={updateLyrics}
-            onAssignLyricsImage={updateLyricsImage}
+            onAssignLyricsImage={updateLyricsImageFn}
           />
         </div>
       )}
