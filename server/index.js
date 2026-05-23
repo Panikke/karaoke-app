@@ -86,15 +86,19 @@ const imageUpload = multer({
 
 // ── Auth Middleware ───────────────────────────────────────────────────────────
 async function requireAuth(req, res, next) {
+  console.log(`[AUTH] ${req.method} ${req.path}`);
   const auth = req.headers.authorization;
   if (!auth?.startsWith('Bearer ')) {
+    console.log('[AUTH] No Bearer token');
     return res.status(401).json({ error: 'No token provided' });
   }
   const token = auth.slice(7);
   const { data: { user }, error } = await supabase.auth.getUser(token);
   if (error || !user) {
+    console.log('[AUTH] Invalid token:', error?.message);
     return res.status(401).json({ error: 'Invalid or expired token' });
   }
+  console.log('[AUTH] OK, user:', user.email);
   req.user = user;
   next();
 }
@@ -136,8 +140,10 @@ app.post(
   requireEditor,
   audioUpload.array('audio'),
   async (req, res) => {
+    console.log('[UPLOAD] Handler reached, files:', req.files?.length ?? 0);
     const files = req.files;
     if (!files?.length) {
+      console.log('[UPLOAD] No files in request');
       return res.status(400).json({ error: 'No audio files received' });
     }
 
@@ -155,6 +161,7 @@ app.post(
       const file = files[i];
       const meta = metaList[i] || {};
 
+      console.log(`[UPLOAD] Inserting "${meta.title || file.originalname}" into Supabase`);
       const { data, error } = await supabase
         .from('songs')
         .insert({
@@ -172,10 +179,12 @@ app.post(
         .single();
 
       if (error) {
+        console.error(`[UPLOAD] Supabase insert failed:`, error.message);
         // Remove orphaned file
         await fs.unlink(path.join(AUDIO_DIR, file.filename)).catch(() => {});
         failed.push({ file: file.originalname, error: error.message });
       } else {
+        console.log(`[UPLOAD] Inserted OK, id:`, data.id);
         inserted.push(data);
       }
     }
@@ -326,6 +335,13 @@ app.delete('/api/songs', requireAuth, async (req, res) => {
 
   if (error) return res.status(500).json({ error: error.message });
   res.json({ ok: true });
+});
+
+// ── Global error handler (catches multer & other middleware errors) ───────────
+app.use((err, req, res, _next) => {
+  console.error(`[ERROR] ${req.method} ${req.path}:`, err.message);
+  const status = err.status || err.statusCode || 500;
+  res.status(status).json({ error: err.message || 'Internal server error' });
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
