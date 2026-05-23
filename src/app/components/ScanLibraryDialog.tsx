@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { X, Loader2, FolderSearch, CheckCircle, AlertCircle, RefreshCw, Music, Image } from 'lucide-react';
-import { listIncomingFiles, scanLibrary, type IncomingFile } from '../../lib/songsApi';
+import { X, Loader2, FolderSearch, CheckCircle, AlertCircle, RefreshCw, Music, Image, Cloud } from 'lucide-react';
+import { listIncomingFiles, scanLibrary, getSyncConfig, syncFromCloud, type IncomingFile } from '../../lib/songsApi';
 import type { Song } from '../App';
 
 interface ScanLibraryDialogProps {
@@ -26,8 +26,11 @@ export function ScanLibraryDialog({ onClose, onImported }: ScanLibraryDialogProp
   const [language, setLanguage]       = useState('Greek (Ελληνικά)');
   const [loading, setLoading]         = useState(true);
   const [scanning, setScanning]       = useState(false);
+  const [syncing, setSyncing]         = useState(false);
   const [error, setError]             = useState<string | null>(null);
   const [result, setResult]           = useState<{ imported: number; failed: { filename: string; error: string }[] } | null>(null);
+  const [syncConfig, setSyncConfig]   = useState<{ configured: boolean; remote: string | null }>({ configured: false, remote: null });
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -46,6 +49,26 @@ export function ScanLibraryDialog({ onClose, onImported }: ScanLibraryDialogProp
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  // Probe whether cloud sync is configured on the server
+  useEffect(() => {
+    getSyncConfig().then(setSyncConfig).catch(() => { /* silently leave as not configured */ });
+  }, []);
+
+  const handleSync = async () => {
+    setSyncing(true);
+    setError(null);
+    setSyncMessage(null);
+    try {
+      const { fileCount } = await syncFromCloud();
+      setSyncMessage(`Cloud sync complete — ${fileCount} audio file(s) now in incoming folder.`);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const toggle = (filename: string) => {
     setSelected(prev => {
@@ -97,18 +120,54 @@ export function ScanLibraryDialog({ onClose, onImported }: ScanLibraryDialogProp
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
           {/* Instructions */}
           <div className="bg-blue-900/30 border border-blue-500/40 rounded-xl p-4 text-sm">
-            <p className="font-medium text-blue-200 mb-1">How this works (Plex-style)</p>
-            <p className="text-gray-300">
-              Drop audio files into the Pi's incoming folder over SCP, SFTP, or Samba — then click <b>Scan</b>.
-              The server reads ID3 tags, moves files into the library, and saves embedded cover art.
-              Much more reliable than browser upload for big batches.
-            </p>
+            <p className="font-medium text-blue-200 mb-1">How this works</p>
+            {syncConfig.configured ? (
+              <>
+                <p className="text-gray-300">
+                  Drop audio files into your <b>{syncConfig.remote}</b> folder from any device (OneDrive web,
+                  phone, or Windows Explorer), then click <b>Sync from Cloud</b> below. The Pi pulls them in,
+                  reads ID3 tags, saves cover art, and indexes them. Works from anywhere.
+                </p>
+                <p className="text-gray-400 text-xs mt-2">
+                  <b>Sharing with guests:</b> in OneDrive web, right-click the folder → <b>Request files</b> to
+                  create an upload link. Anyone with the link can add songs — no Microsoft account needed.
+                </p>
+              </>
+            ) : (
+              <p className="text-gray-300">
+                Cloud sync is not yet set up. For remote bulk uploads, configure <code className="bg-black/40 px-1 rounded">RCLONE_REMOTE</code> in
+                the Pi's <code className="bg-black/40 px-1 rounded">.env</code> (e.g. <code className="bg-black/40 px-1 rounded">onedrive:karaoke-incoming</code>) — see <code className="bg-black/40 px-1 rounded">server/LIBRARY-SCAN-SETUP.md</code>.
+                Until then, you can drop files into the incoming folder over SCP/SFTP/Samba on the LAN.
+              </p>
+            )}
             {incomingPath && (
               <p className="mt-2 text-xs font-mono text-blue-300 break-all">
                 Incoming folder on Pi: <span className="bg-black/40 px-2 py-0.5 rounded">{incomingPath}</span>
               </p>
             )}
           </div>
+
+          {/* Cloud sync action */}
+          {syncConfig.configured && (
+            <button
+              onClick={handleSync}
+              disabled={syncing || scanning}
+              className="w-full px-4 py-3 bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed rounded-xl flex items-center justify-center gap-2 font-medium transition-all"
+            >
+              {syncing ? (
+                <><Loader2 className="w-4 h-4 animate-spin" /> Pulling from {syncConfig.remote}…</>
+              ) : (
+                <><Cloud className="w-4 h-4" /> Sync from Cloud ({syncConfig.remote})</>
+              )}
+            </button>
+          )}
+
+          {syncMessage && (
+            <div className="flex items-start gap-2 px-4 py-3 bg-indigo-900/40 border border-indigo-500/50 rounded-xl text-sm text-indigo-200">
+              <CheckCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <span>{syncMessage}</span>
+            </div>
+          )}
 
           {/* Controls */}
           <div className="flex flex-wrap items-center gap-3">
