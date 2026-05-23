@@ -251,3 +251,48 @@ export async function clearLibraryOnServer(): Promise<void> {
     throw new Error(err.error || 'Clear failed');
   }
 }
+
+// ── Library scan API (Plex-style filesystem import) ──────────────────────────
+export interface IncomingFile {
+  filename: string;
+  sizeBytes: number;
+  title: string;
+  artist: string;
+  trackNumber: string | null;
+  hasCoverArt: boolean;
+}
+
+export async function listIncomingFiles(): Promise<{ files: IncomingFile[]; incomingPath: string }> {
+  const token = await getToken();
+  const res = await fetch('/api/library/incoming', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || 'Failed to list incoming files');
+  }
+  return res.json();
+}
+
+export async function scanLibrary(
+  language: string,
+  filenames?: string[],
+): Promise<{ imported: Song[]; failed: { filename: string; error: string }[]; totalProcessed: number }> {
+  const token = await getToken();
+  const res = await fetch('/api/library/scan', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ language, files: filenames }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || 'Library scan failed');
+  }
+  const data = await res.json();
+  // Map inserted DB rows back to Song shape so caller can update state
+  data.imported = (data.imported as DbSong[]).map(dbToSong);
+  return data;
+}

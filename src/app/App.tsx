@@ -6,7 +6,8 @@ import { BulkImageDialog } from './components/BulkImageDialog';
 import { EditSongDialog } from './components/EditSongDialog';
 import { LoginPage } from './components/LoginPage';
 import { AdminDashboard } from './components/AdminDashboard';
-import { Music, FolderUp, Images, LogIn, LogOut, Shield, Loader2 } from 'lucide-react';
+import { ScanLibraryDialog } from './components/ScanLibraryDialog';
+import { Music, FolderUp, Images, LogIn, LogOut, Shield, Loader2, FolderSearch } from 'lucide-react';
 import type { LyricLine } from '../utils/lrcParser';
 import { useAuth } from './hooks/useAuth';
 import {
@@ -53,6 +54,7 @@ export default function App() {
   const [currentSong, setCurrentSong] = useState<Song | null>(null);
   const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [showBulkImages, setShowBulkImages] = useState(false);
+  const [showScanLibrary, setShowScanLibrary] = useState(false);
   const [editingSong, setEditingSong]   = useState<Song | null>(null);
   const [loading, setLoading]           = useState(true);
   const [loadError, setLoadError]       = useState<string | null>(null);
@@ -250,15 +252,24 @@ export default function App() {
                 {user && canEditPlaylist && (
                   <>
                     <button
-                      onClick={() => setShowBulkImages(true)}
+                      onClick={() => setShowScanLibrary(true)}
+                      title="Scan files from the Pi incoming folder (Plex-style, best for large batches)"
                       className="px-4 py-2.5 min-h-[44px] bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl hover:from-emerald-600 hover:to-teal-600 transition-all flex items-center gap-2 font-medium text-sm"
+                    >
+                      <FolderSearch className="w-4 h-4" />
+                      <span className="hidden md:inline">Scan Library</span>
+                    </button>
+                    <button
+                      onClick={() => setShowBulkImages(true)}
+                      className="px-4 py-2.5 min-h-[44px] bg-white/5 hover:bg-white/10 border border-white/20 rounded-xl transition-all flex items-center gap-2 font-medium text-sm"
                     >
                       <Images className="w-4 h-4" />
                       <span className="hidden md:inline">Bulk Images</span>
                     </button>
                     <button
                       onClick={() => setShowBulkUpload(true)}
-                      className="px-4 py-2.5 min-h-[44px] bg-gradient-to-r from-blue-500 to-cyan-500 rounded-xl hover:from-blue-600 hover:to-cyan-600 transition-all flex items-center gap-2 font-medium text-sm"
+                      title="HTTP upload (best for 1-5 ad-hoc files)"
+                      className="px-4 py-2.5 min-h-[44px] bg-white/5 hover:bg-white/10 border border-white/20 rounded-xl transition-all flex items-center gap-2 font-medium text-sm"
                     >
                       <FolderUp className="w-4 h-4" />
                       <span className="hidden md:inline">Upload Songs</span>
@@ -319,6 +330,12 @@ export default function App() {
 
       {showBulkUpload && (
         <BulkUploadDialog onClose={() => setShowBulkUpload(false)} onUpload={addSongs} />
+      )}
+      {showScanLibrary && (
+        <ScanLibraryDialog
+          onClose={() => setShowScanLibrary(false)}
+          onImported={(newSongs) => setSongs(prev => [...prev, ...newSongs])}
+        />
       )}
       {showBulkImages && (
         <BulkImageDialog songs={songs} onClose={() => setShowBulkImages(false)} onApply={updateCoverArt} />

@@ -13,6 +13,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import { existsSync, mkdirSync } from 'fs';
 import { randomUUID } from 'crypto';
+import { parseFile as parseAudioFile } from 'music-metadata';
 
 // Load .env from the project root (one level up from server/)
 dotenv.config({ path: path.resolve(import.meta.dirname, '..', '.env') });
@@ -20,6 +21,8 @@ dotenv.config({ path: path.resolve(import.meta.dirname, '..', '.env') });
 // ── Config ────────────────────────────────────────────────────────────────────
 const PORT       = process.env.PORT || 3001;
 const AUDIO_DIR  = process.env.AUDIO_DIR || '/var/www/karaoke-app/audio';
+const INCOMING_DIR = process.env.INCOMING_DIR || path.join(AUDIO_DIR, 'incoming');
+const FAILED_DIR   = path.join(AUDIO_DIR, 'failed');
 const SUPABASE_URL      = process.env.VITE_SUPABASE_URL;
 const SERVICE_ROLE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -28,8 +31,10 @@ if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
   process.exit(1);
 }
 
-// Ensure audio directory exists
-if (!existsSync(AUDIO_DIR)) mkdirSync(AUDIO_DIR, { recursive: true });
+// Ensure audio directories exist
+if (!existsSync(AUDIO_DIR))    mkdirSync(AUDIO_DIR,    { recursive: true });
+if (!existsSync(INCOMING_DIR)) mkdirSync(INCOMING_DIR, { recursive: true });
+if (!existsSync(FAILED_DIR))   mkdirSync(FAILED_DIR,   { recursive: true });
 
 // Service-role client — bypasses RLS for write operations
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
@@ -337,6 +342,168 @@ app.delete('/api/songs', requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+// ── Library Scan (Plex/Navidrome-style) ──────────────────────────────────────
+// Files are placed in INCOMING_DIR via SCP/Samba/SFTP, then this scans them,
+// extracts tags with music-metadata, moves to AUDIO_DIR, and inserts rows.
+
+const AUDIO_EXT_RE = /\.(mp3|wav|ogg|m4a|flac|aac)$/i;
+
+function parseFromFilename(filename) {
+  const base = filename.replace(/\.[^/.]+$/, '');
+  const numMatch = base.match(/^(\d+)[_\s\-\.]+(.+)$/);
+  const trackNumber = numMatch ? numMatch[1] : null;
+  const remainder   = numMatch ? numMatch[2] : base;
+  const parts = remainder.split(/\s[-–]\s/).map(p => p.trim());
+  if (parts.length >= 2) {
+    return { trackNumber, title: parts[0], artist: parts.slice(1).join(' - ') };
+  }
+  return { trackNumber, title: remainder, artist: 'Unknown Artist' };
+}
+
+async function extractMetadata(filePath) {
+  try {
+    const meta = await parseAudioFile(filePath, { skipCovers: false, duration: false });
+    const common = meta.common || {};
+    return {
+      title:        common.title  || null,
+      artist:       common.artist || (common.artists?.[0] ?? null),
+      trackNumber:  common.track?.no ? String(common.track.no) : null,
+      hasCoverArt:  Array.isArray(common.picture) && common.picture.length > 0,
+      coverArtData: common.picture?.[0] || null,
+    };
+  } catch (err) {
+    console.warn(`[SCAN] Could not parse tags from ${path.basename(filePath)}:`, err.message);
+    return { title: null, artist: null, trackNumber: null, hasCoverArt: false, coverArtData: null };
+  }
+}
+
+/**
+ * GET /api/library/incoming
+ * Lists files currently in INCOMING_DIR with parsed metadata preview.
+ */
+app.get('/api/library/incoming', requireAuth, requireEditor, async (_req, res) => {
+  console.log('[SCAN] List incoming requested');
+  try {
+    const entries = await fs.readdir(INCOMING_DIR, { withFileTypes: true });
+    const audioFiles = entries
+      .filter(e => e.isFile() && AUDIO_EXT_RE.test(e.name))
+      .map(e => e.name);
+
+    const results = [];
+    for (const filename of audioFiles) {
+      const filePath = path.join(INCOMING_DIR, filename);
+      const stat     = await fs.stat(filePath);
+      const tags     = await extractMetadata(filePath);
+      const fallback = parseFromFilename(filename);
+
+      results.push({
+        filename,
+        sizeBytes:   stat.size,
+        // Prefer ID3 tags; fall back to filename parsing
+        title:       tags.title       || fallback.title,
+        artist:      tags.artist      || fallback.artist,
+        trackNumber: tags.trackNumber || fallback.trackNumber,
+        hasCoverArt: tags.hasCoverArt,
+      });
+    }
+    console.log(`[SCAN] Found ${results.length} files in incoming/`);
+    res.json({ files: results, incomingPath: INCOMING_DIR });
+  } catch (err) {
+    console.error('[SCAN] List incoming failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * POST /api/library/scan
+ * Body: { language: string, files?: string[] }   // files optional — defaults to all
+ * Processes each file: extract tags, move to AUDIO_DIR with UUID name, save cover
+ * art if embedded, insert Supabase row. Failed files move to FAILED_DIR.
+ */
+app.post('/api/library/scan', requireAuth, requireEditor, async (req, res) => {
+  const language = req.body?.language || 'Greek (Ελληνικά)';
+  const requested = Array.isArray(req.body?.files) ? req.body.files : null;
+  console.log(`[SCAN] Starting scan (language=${language}, files=${requested?.length ?? 'all'})`);
+
+  try {
+    const entries = await fs.readdir(INCOMING_DIR, { withFileTypes: true });
+    const audioFiles = entries
+      .filter(e => e.isFile() && AUDIO_EXT_RE.test(e.name))
+      .map(e => e.name)
+      .filter(n => !requested || requested.includes(n));
+
+    const imported = [];
+    const failed   = [];
+
+    for (const filename of audioFiles) {
+      const sourcePath = path.join(INCOMING_DIR, filename);
+      try {
+        const tags     = await extractMetadata(sourcePath);
+        const fallback = parseFromFilename(filename);
+
+        const title       = tags.title       || fallback.title;
+        const artist      = tags.artist      || fallback.artist;
+        const trackNumber = tags.trackNumber || fallback.trackNumber;
+
+        // Move file to permanent location with UUID filename
+        const ext          = path.extname(filename).toLowerCase();
+        const newFilename  = `${randomUUID()}${ext}`;
+        const destPath     = path.join(AUDIO_DIR, newFilename);
+        await fs.rename(sourcePath, destPath);
+
+        // Save embedded cover art if present
+        let coverArtFilename = null;
+        if (tags.coverArtData?.data) {
+          const cExt = (tags.coverArtData.format || 'image/jpeg').replace('image/', '.');
+          coverArtFilename = `cover_${path.parse(newFilename).name}${cExt}`;
+          await fs.writeFile(path.join(AUDIO_DIR, coverArtFilename), tags.coverArtData.data);
+        }
+
+        const { data, error } = await supabase
+          .from('songs')
+          .insert({
+            track_number:       trackNumber,
+            title:              title,
+            artist:             artist,
+            language:           language,
+            lyrics:             '',
+            synced_lyrics:      [],
+            lyrics_source:      'none',
+            audio_filename:     newFilename,
+            cover_art_filename: coverArtFilename,
+            in_playlist:        true,
+          })
+          .select()
+          .single();
+
+        if (error) {
+          // Roll back: move file back to incoming
+          await fs.rename(destPath, sourcePath).catch(() => {});
+          if (coverArtFilename) {
+            await fs.unlink(path.join(AUDIO_DIR, coverArtFilename)).catch(() => {});
+          }
+          throw new Error(`Supabase: ${error.message}`);
+        }
+
+        console.log(`[SCAN] Imported "${title}" by ${artist}`);
+        imported.push(data);
+      } catch (err) {
+        console.error(`[SCAN] Failed "${filename}":`, err.message);
+        // Move to failed/ so it's not retried automatically next scan
+        const failedPath = path.join(FAILED_DIR, filename);
+        await fs.rename(sourcePath, failedPath).catch(() => {});
+        failed.push({ filename, error: err.message });
+      }
+    }
+
+    console.log(`[SCAN] Done: ${imported.length} imported, ${failed.length} failed`);
+    res.json({ imported, failed, totalProcessed: audioFiles.length });
+  } catch (err) {
+    console.error('[SCAN] Scan failed:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Global error handler (catches multer & other middleware errors) ───────────
 app.use((err, req, res, _next) => {
   console.error(`[ERROR] ${req.method} ${req.path}:`, err.message);
@@ -347,5 +514,7 @@ app.use((err, req, res, _next) => {
 // ── Start ─────────────────────────────────────────────────────────────────────
 app.listen(PORT, '127.0.0.1', () => {
   console.log(`🎤 Karaoke API listening on http://127.0.0.1:${PORT}`);
-  console.log(`   Audio dir: ${AUDIO_DIR}`);
+  console.log(`   Audio dir:    ${AUDIO_DIR}`);
+  console.log(`   Incoming dir: ${INCOMING_DIR}`);
+  console.log(`   Failed dir:   ${FAILED_DIR}`);
 });
