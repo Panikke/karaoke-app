@@ -137,7 +137,8 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
     setIsPlaying(false);
     setCurrentTime(0);
     lineRefs.current = [];
-    setShowImageLyrics(false);
+    // If the song has a lyrics image, show it by default; otherwise use text
+    setShowImageLyrics(!!song.lyricsImageUrl);
 
     if (shouldAutoplayRef.current) {
       shouldAutoplayRef.current = false;
@@ -380,7 +381,7 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
                 onClick={() => setShowImageLyrics(v => !v)}
                 className="text-xs px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition-colors text-gray-300"
               >
-                {showImageLyrics ? '📝 Show text lyrics' : '🖼 Show image lyrics'}
+                {showImageLyrics ? '📝 Text lyrics' : '🖼 Image lyrics'}
               </button>
             </div>
           )}
