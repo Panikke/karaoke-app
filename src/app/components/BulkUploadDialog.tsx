@@ -6,7 +6,7 @@ import { parseLrc } from '../../utils/lrcParser';
 
 interface BulkUploadDialogProps {
   onClose: () => void;
-  onUpload: (songs: SongUploadPayload[], onProgress?: (done: number, total: number) => void) => Promise<void>;
+  onUpload: (songs: SongUploadPayload[], onProgress?: (done: number, total: number, filePct?: number) => void) => Promise<void>;
 }
 
 type LyricsStatus = 'pending' | 'searching' | 'found' | 'not-found' | 'manual' | 'file';
@@ -126,7 +126,7 @@ export function BulkUploadDialog({ onClose, onUpload }: BulkUploadDialogProps) {
   const [language, setLanguage] = useState('Greek (Ελληνικά)');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [saveProgress, setSaveProgress] = useState<{ done: number; total: number } | null>(null);
+  const [saveProgress, setSaveProgress] = useState<{ done: number; total: number; filePct: number } | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const audioRef = useRef<HTMLInputElement>(null);
   const lyricsRef = useRef<HTMLInputElement>(null);
@@ -248,7 +248,7 @@ export function BulkUploadDialog({ onClose, onUpload }: BulkUploadDialogProps) {
     if (!items.length) return;
     setSaving(true);
     setUploadError(null);
-    setSaveProgress({ done: 0, total: items.length });
+    setSaveProgress({ done: 0, total: items.length, filePct: 0 });
     const payloads: SongUploadPayload[] = items.map(it => ({
       trackNumber: it.trackNumber,
       title: it.title,
@@ -261,7 +261,7 @@ export function BulkUploadDialog({ onClose, onUpload }: BulkUploadDialogProps) {
       lyricsImageFile: it.lyricsImageFile,
     }));
     try {
-      await onUpload(payloads, (done, total) => setSaveProgress({ done, total }));
+      await onUpload(payloads, (done, total, filePct = 0) => setSaveProgress({ done, total, filePct }));
       onClose();
     } catch (err) {
       setUploadError(
@@ -437,16 +437,49 @@ export function BulkUploadDialog({ onClose, onUpload }: BulkUploadDialogProps) {
           <button onClick={onClose} className="flex-1 px-6 py-3 bg-gray-700 hover:bg-gray-600 rounded-lg transition-colors">
             Cancel
           </button>
-          <button
-            onClick={handleSubmit}
-            disabled={saving || items.length === 0}
-            className="flex-1 px-6 py-3 bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed rounded-lg transition-all font-medium flex items-center justify-center gap-2"
-          >
-            {saving
-              ? <><Loader2 className="w-4 h-4 animate-spin" /> {saveProgress ? `Saving ${saveProgress.done} of ${saveProgress.total}…` : 'Preparing…'}</>
-              : `Add ${items.length} Song${items.length !== 1 ? 's' : ''} to Library`
-            }
-          </button>
+          {saving && saveProgress ? (
+            /* ── Upload progress bar ── */
+            <div className="flex-1 flex flex-col gap-2">
+              {(() => {
+                const overallPct = Math.round(
+                  ((saveProgress.done + saveProgress.filePct / 100) / saveProgress.total) * 100
+                );
+                return (
+                  <>
+                    <div className="flex justify-between text-xs text-gray-300 px-1">
+                      <span>
+                        Uploading song {Math.min(saveProgress.done + 1, saveProgress.total)} of {saveProgress.total}
+                      </span>
+                      <span className="font-mono font-bold text-pink-300">{overallPct}%</span>
+                    </div>
+                    <div className="w-full h-3 bg-white/10 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-pink-500 to-purple-500 rounded-full transition-all duration-150"
+                        style={{ width: `${overallPct}%` }}
+                      />
+                    </div>
+                    <p className="text-xs text-center text-gray-500">
+                      {saveProgress.done} of {saveProgress.total} saved
+                      {saveProgress.filePct > 0 && saveProgress.filePct < 100
+                        ? ` · current file ${saveProgress.filePct}%`
+                        : ''}
+                    </p>
+                  </>
+                );
+              })()}
+            </div>
+          ) : (
+            <button
+              onClick={handleSubmit}
+              disabled={saving || items.length === 0}
+              className="flex-1 px-6 py-3 bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed rounded-lg transition-all font-medium flex items-center justify-center gap-2"
+            >
+              {saving
+                ? <><Loader2 className="w-4 h-4 animate-spin" /> Preparing…</>
+                : `Add ${items.length} Song${items.length !== 1 ? 's' : ''} to Library`
+              }
+            </button>
+          )}
           </div>
         </div>
       </div>

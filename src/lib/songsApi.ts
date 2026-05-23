@@ -98,10 +98,41 @@ async function getToken(): Promise<string> {
   return session.access_token;
 }
 
+// ── XHR upload helper (supports byte-level progress) ─────────────────────────
+function xhrPost(
+  url: string,
+  form: FormData,
+  token: string,
+  onProgress?: (pct: number) => void,
+): Promise<any> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url);
+    xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable && onProgress) {
+        onProgress(Math.round((e.loaded / e.total) * 100));
+      }
+    };
+
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try { resolve(JSON.parse(xhr.responseText)); }
+        catch { resolve({}); }
+      } else {
+        try { reject(new Error(JSON.parse(xhr.responseText).error || xhr.statusText)); }
+        catch { reject(new Error(xhr.statusText)); }
+      }
+    };
+    xhr.onerror = () => reject(new Error('Network error — is the server reachable?'));
+    xhr.send(form);
+  });
+}
+
 /**
- * Upload songs to the Pi.
- * Calls POST /api/songs/upload one song at a time so we can report progress.
- * Returns the created Song objects.
+ * Upload one song to the Pi.
+ * onProgress receives 0-100 as bytes are sent.
  */
 export async function uploadSongToServer(
   payload: {
@@ -115,6 +146,7 @@ export async function uploadSongToServer(
     audioFile: File;
     lyricsImageFile?: File;
   },
+  onProgress?: (pct: number) => void,
 ): Promise<Song> {
   const token = await getToken();
 
@@ -133,18 +165,9 @@ export async function uploadSongToServer(
     }]),
   );
 
-  const res = await fetch('/api/songs/upload', {
-    method:  'POST',
-    headers: { Authorization: `Bearer ${token}` },
-    body:    form,
-  });
-
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || 'Upload failed');
-  }
-
-  const { songs } = await res.json();
+  const data = await xhrPost('/api/songs/upload', form, token, onProgress);
+  if (!data.songs?.length) throw new Error(data.error || 'Upload failed');
+  const { songs } = data;
   const created: Song = dbToSong(songs[0] as DbSong);
 
   // Upload lyrics image separately if provided

@@ -72,13 +72,15 @@ export default function App() {
   // ── Upload ──────────────────────────────────────────────────────────────────
   const addSongs = useCallback(async (
     payloads: SongUploadPayload[],
-    onProgress?: (done: number, total: number) => void,
+    onProgress?: (done: number, total: number, filePct?: number) => void,
   ) => {
     const newSongs: Song[] = [];
     for (let i = 0; i < payloads.length; i++) {
-      const song = await uploadSongToServer(payloads[i]);
+      const song = await uploadSongToServer(payloads[i], (pct) => {
+        onProgress?.(i, payloads.length, pct);
+      });
       newSongs.push(song);
-      onProgress?.(i + 1, payloads.length);
+      onProgress?.(i + 1, payloads.length, 100);
     }
     setSongs(prev => [...prev, ...newSongs]);
   }, []);
