@@ -262,11 +262,19 @@ export function BulkUploadDialog({ onClose, onUpload }: BulkUploadDialogProps) {
     }));
     try {
       await onUpload(payloads, (done, total, filePct = 0) => setSaveProgress({ done, total, filePct }));
-      onClose();
+      onClose(); // all succeeded
     } catch (err) {
-      setUploadError(
-        err instanceof Error ? err.message : 'Upload failed — check that you are signed in and the server is reachable.'
-      );
+      const msg = err instanceof Error ? err.message : 'Upload failed — check that you are signed in and the server is reachable.';
+      // If some songs were uploaded (partial success), close after showing the warning briefly
+      if (msg.includes(' of ') && msg.includes('uploaded')) {
+        setUploadError(msg);
+        setSaving(false);
+        setSaveProgress(null);
+        // Close after 4 seconds so user can read the summary
+        setTimeout(() => onClose(), 4000);
+        return;
+      }
+      setUploadError(msg);
     } finally {
       setSaving(false);
       setSaveProgress(null);

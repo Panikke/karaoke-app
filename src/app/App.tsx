@@ -74,15 +74,38 @@ export default function App() {
     payloads: SongUploadPayload[],
     onProgress?: (done: number, total: number, filePct?: number) => void,
   ) => {
-    const newSongs: Song[] = [];
-    for (let i = 0; i < payloads.length; i++) {
-      const song = await uploadSongToServer(payloads[i], (pct) => {
-        onProgress?.(i, payloads.length, pct);
-      });
-      newSongs.push(song);
-      onProgress?.(i + 1, payloads.length, 100);
+    const CONCURRENCY = 3; // upload 3 songs at a time
+    let done = 0;
+    const failures: string[] = [];
+
+    // Process in chunks of CONCURRENCY
+    for (let i = 0; i < payloads.length; i += CONCURRENCY) {
+      const chunk = payloads.slice(i, i + CONCURRENCY);
+      await Promise.all(chunk.map(async (payload, j) => {
+        const idx = i + j;
+        try {
+          const song = await uploadSongToServer(payload, (pct) => {
+            onProgress?.(done, payloads.length, pct);
+          });
+          // Add each song to library immediately as it finishes
+          setSongs(prev => [...prev, song]);
+        } catch (err) {
+          console.warn(`Failed to upload "${payload.title}":`, err);
+          failures.push(payload.title);
+        }
+        done++;
+        onProgress?.(done, payloads.length, 100);
+      }));
     }
-    setSongs(prev => [...prev, ...newSongs]);
+
+    if (failures.length > 0) {
+      const preview = failures.slice(0, 3).join(', ');
+      const more = failures.length > 3 ? ` +${failures.length - 3} more` : '';
+      throw new Error(
+        `${payloads.length - failures.length} of ${payloads.length} uploaded. ` +
+        `Failed: ${preview}${more}`
+      );
+    }
   }, []);
 
   // ── Delete ──────────────────────────────────────────────────────────────────
