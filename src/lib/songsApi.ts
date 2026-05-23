@@ -274,6 +274,28 @@ export async function listIncomingFiles(): Promise<{ files: IncomingFile[]; inco
   return res.json();
 }
 
+export async function getSyncConfig(): Promise<{ configured: boolean; remote: string | null }> {
+  const token = await getToken();
+  const res = await fetch('/api/library/sync-config', {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) return { configured: false, remote: null };
+  return res.json();
+}
+
+export async function syncFromCloud(): Promise<{ ok: boolean; fileCount: number }> {
+  const token = await getToken();
+  const res = await fetch('/api/library/sync', {
+    method:  'POST',
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ error: res.statusText }));
+    throw new Error(err.error || 'Cloud sync failed');
+  }
+  return res.json();
+}
+
 export async function scanLibrary(
   language: string,
   filenames?: string[],

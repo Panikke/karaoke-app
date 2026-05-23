@@ -14,6 +14,9 @@ import fs from 'fs/promises';
 import { existsSync, mkdirSync } from 'fs';
 import { randomUUID } from 'crypto';
 import { parseFile as parseAudioFile } from 'music-metadata';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+const execAsync = promisify(exec);
 
 // Load .env from the project root (one level up from server/)
 dotenv.config({ path: path.resolve(import.meta.dirname, '..', '.env') });
@@ -23,6 +26,8 @@ const PORT       = process.env.PORT || 3001;
 const AUDIO_DIR  = process.env.AUDIO_DIR || '/var/www/karaoke-app/audio';
 const INCOMING_DIR = process.env.INCOMING_DIR || path.join(AUDIO_DIR, 'incoming');
 const FAILED_DIR   = path.join(AUDIO_DIR, 'failed');
+// rclone remote name (e.g. "onedrive:karaoke-incoming") — set in .env to enable cloud sync
+const RCLONE_REMOTE = process.env.RCLONE_REMOTE || '';
 const SUPABASE_URL      = process.env.VITE_SUPABASE_URL;
 const SERVICE_ROLE_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
@@ -501,6 +506,55 @@ app.post('/api/library/scan', requireAuth, requireEditor, async (req, res) => {
   } catch (err) {
     console.error('[SCAN] Scan failed:', err.message);
     res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * GET /api/library/sync-config
+ * Returns whether cloud sync is configured (so the UI can hide the button if not).
+ */
+app.get('/api/library/sync-config', requireAuth, requireEditor, (_req, res) => {
+  res.json({
+    configured: !!RCLONE_REMOTE,
+    remote:     RCLONE_REMOTE || null,
+  });
+});
+
+/**
+ * POST /api/library/sync
+ * Pulls new files from the configured rclone remote into INCOMING_DIR.
+ * Uses `rclone copy` (not sync) so cloud files are not deleted.
+ */
+app.post('/api/library/sync', requireAuth, requireEditor, async (_req, res) => {
+  if (!RCLONE_REMOTE) {
+    return res.status(400).json({
+      error: 'Cloud sync not configured. Set RCLONE_REMOTE in .env (e.g. "onedrive:karaoke-incoming") and configure the rclone remote on the Pi.',
+    });
+  }
+
+  console.log(`[SYNC] Pulling from ${RCLONE_REMOTE} → ${INCOMING_DIR}`);
+  try {
+    // `rclone copy` skips files already present, downloads only new ones.
+    // --stats-one-line gives a single summary line we can parse if we want to.
+    const cmd = `rclone copy "${RCLONE_REMOTE}" "${INCOMING_DIR}" --include "*.{mp3,wav,ogg,m4a,flac,aac,MP3,WAV,OGG,M4A,FLAC,AAC}" --transfers 4 --checkers 8 --stats=0`;
+    const { stdout, stderr } = await execAsync(cmd, {
+      timeout: 30 * 60 * 1000,           // 30 min hard timeout
+      maxBuffer: 10 * 1024 * 1024,       // 10 MB output buffer
+    });
+    if (stderr) console.log('[SYNC] rclone stderr:', stderr.trim());
+    if (stdout) console.log('[SYNC] rclone stdout:', stdout.trim());
+
+    // After pulling, count what's now in incoming/
+    const entries = await fs.readdir(INCOMING_DIR, { withFileTypes: true });
+    const fileCount = entries.filter(e => e.isFile() && AUDIO_EXT_RE.test(e.name)).length;
+
+    console.log(`[SYNC] Done. ${fileCount} audio file(s) currently in incoming/`);
+    res.json({ ok: true, fileCount });
+  } catch (err) {
+    console.error('[SYNC] Failed:', err.message);
+    res.status(500).json({
+      error: `rclone failed: ${err.message}. Is rclone installed and is the remote configured?`,
+    });
   }
 });
 
