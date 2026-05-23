@@ -106,6 +106,28 @@ double-check the `.env` file and that you restarted PM2 *after* editing it.
 5. Server reads ID3 tags, moves files into the library with UUID filenames, saves embedded cover art, inserts Supabase rows
 6. Failed files (corrupt, unreadable tags, DB error) end up in `audio/failed/`
 
+### Letting guests upload without giving them OneDrive access
+
+Use OneDrive's **Request Files** feature — a public upload link that
+lets anyone add files to your folder without a Microsoft account.
+
+1. In OneDrive on the web (`onedrive.live.com`), navigate to your
+   `Karaoke Incoming` folder
+2. Right-click the folder (or open it and click the **⋯ more** menu) → **Request files**
+3. Give the request a name (e.g. "Karaoke songs"), click **Next**, then **Create link**
+4. Copy the link — share it with anyone (text, WhatsApp, email, QR code)
+
+Recipients open the link, click **Select files**, drop their songs in,
+and submit. The files appear in your `Karaoke Incoming` folder. From the
+Pi's perspective, it's identical to you uploading them yourself — the
+same **Sync from Cloud** → **Scan & Import** flow indexes them.
+
+**Notes on Request Files links:**
+- Guests cannot see what's already in the folder (upload-only)
+- You can revoke the link anytime from OneDrive's "Manage access"
+- Files uploaded this way appear with the guest's name prefix
+- Works on phone, web, and desktop equally well
+
 ### Important: rclone `copy` vs `sync`
 
 The server uses `rclone copy` (not `sync`), so files in OneDrive are **not**

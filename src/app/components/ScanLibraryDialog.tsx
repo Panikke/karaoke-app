@@ -122,11 +122,17 @@ export function ScanLibraryDialog({ onClose, onImported }: ScanLibraryDialogProp
           <div className="bg-blue-900/30 border border-blue-500/40 rounded-xl p-4 text-sm">
             <p className="font-medium text-blue-200 mb-1">How this works</p>
             {syncConfig.configured ? (
-              <p className="text-gray-300">
-                Drop audio files into your <b>{syncConfig.remote}</b> folder from any device (OneDrive web,
-                phone, or Windows Explorer), then click <b>Sync from Cloud</b> below. The Pi pulls them in,
-                reads ID3 tags, saves cover art, and indexes them. Works from anywhere.
-              </p>
+              <>
+                <p className="text-gray-300">
+                  Drop audio files into your <b>{syncConfig.remote}</b> folder from any device (OneDrive web,
+                  phone, or Windows Explorer), then click <b>Sync from Cloud</b> below. The Pi pulls them in,
+                  reads ID3 tags, saves cover art, and indexes them. Works from anywhere.
+                </p>
+                <p className="text-gray-400 text-xs mt-2">
+                  <b>Sharing with guests:</b> in OneDrive web, right-click the folder → <b>Request files</b> to
+                  create an upload link. Anyone with the link can add songs — no Microsoft account needed.
+                </p>
+              </>
             ) : (
               <p className="text-gray-300">
                 Cloud sync is not yet set up. For remote bulk uploads, configure <code className="bg-black/40 px-1 rounded">RCLONE_REMOTE</code> in
