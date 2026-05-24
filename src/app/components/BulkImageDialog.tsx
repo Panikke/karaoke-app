@@ -6,6 +6,7 @@ interface BulkImageDialogProps {
   songs: Song[];
   onClose: () => void;
   onApply: (songId: string, imageFile: File) => Promise<void>;
+  mode?: 'cover' | 'lyrics';
 }
 
 interface ImageMatch {
@@ -27,14 +28,27 @@ function leadingNumber(name: string) {
   return name.match(/^(\d+)/)?.[1] ?? null;
 }
 
+function normalizeNum(s: string | null | undefined): string | null {
+  if (!s) return null;
+  const n = parseInt(s, 10);
+  return isNaN(n) ? null : String(n);
+}
+
 function bestMatch(file: File, songs: Song[]): Song | null {
   const fileNorm = normalize(stripExt(file.name));
-  const fileNum = leadingNumber(file.name);
+  const fileNum = normalizeNum(leadingNumber(file.name));
 
-  // 1. Leading number match
+  // 1. Track number match (highest priority — handles "042.jpg" → trackNumber "42")
   if (fileNum) {
     for (const song of songs) {
-      const songNum = leadingNumber(song.title) || leadingNumber(song.artist);
+      if (normalizeNum(song.trackNumber) === fileNum) return song;
+    }
+  }
+
+  // 2. Leading number in title or artist
+  if (fileNum) {
+    for (const song of songs) {
+      const songNum = normalizeNum(leadingNumber(song.title)) ?? normalizeNum(leadingNumber(song.artist));
       if (songNum === fileNum) return song;
     }
   }
@@ -55,7 +69,7 @@ function bestMatch(file: File, songs: Song[]): Song | null {
   return null;
 }
 
-export function BulkImageDialog({ songs, onClose, onApply }: BulkImageDialogProps) {
+export function BulkImageDialog({ songs, onClose, onApply, mode = 'cover' }: BulkImageDialogProps) {
   const [matches, setMatches] = useState<ImageMatch[]>([]);
   const [saving, setSaving] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -97,8 +111,12 @@ export function BulkImageDialog({ songs, onClose, onApply }: BulkImageDialogProp
 
         <div className="border-b border-white/10 px-6 py-5 flex items-center justify-between flex-shrink-0">
           <div>
-            <h2 className="text-2xl font-bold">Bulk Add Cover Images</h2>
-            <p className="text-sm text-gray-400 mt-1">Upload JPEG / PNG files — automatically matched to songs by filename</p>
+            <h2 className="text-2xl font-bold">{mode === 'lyrics' ? 'Bulk Add Lyrics Images' : 'Bulk Add Cover Images'}</h2>
+            <p className="text-sm text-gray-400 mt-1">
+              {mode === 'lyrics'
+                ? 'Upload lyrics screenshots — matched to songs by track number (e.g. 042.jpg → track 42)'
+                : 'Upload JPEG / PNG files — automatically matched to songs by filename'}
+            </p>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-white/10 rounded-lg transition-colors">
             <X className="w-5 h-5" />
