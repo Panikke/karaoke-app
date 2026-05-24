@@ -346,6 +346,7 @@ export default function App() {
           onClose={() => setEditingSong(null)}
           onSave={updateSong}
           onAssignLyricsImage={updateLyricsImageFn}
+          onUpdateLyrics={updateLyrics}
         />
       )}
       {showLogin && (
