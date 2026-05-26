@@ -470,7 +470,7 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
                       ${dragOver === i && dragIdx !== i ? 'border-t-2 border-purple-400' : ''}
                     `}
                     onClick={() => dragIdx === null && onSelectSong(s)}>
-                    <GripVertical className="w-3 h-3 text-gray-600 cursor-grab opacity-0 group-hover:opacity-100 flex-shrink-0 active:cursor-grabbing" />
+                    <GripVertical className="w-4 h-4 text-gray-500 cursor-grab flex-shrink-0 active:cursor-grabbing hover:text-gray-300" />
                     {s.coverArtUrl
                       ? <img src={s.coverArtUrl} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0" />
                       : <div className="w-8 h-8 rounded bg-white/10 flex items-center justify-center flex-shrink-0 text-xs">🎵</div>
