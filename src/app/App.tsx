@@ -7,7 +7,7 @@ import { EditSongDialog } from './components/EditSongDialog';
 import { LoginPage } from './components/LoginPage';
 import { AdminDashboard } from './components/AdminDashboard';
 import { ScanLibraryDialog } from './components/ScanLibraryDialog';
-import { Music, FolderUp, Images, LogIn, LogOut, Shield, Loader2, FolderSearch } from 'lucide-react';
+import { Music, FolderUp, Images, ScrollText, LogIn, LogOut, Shield, Loader2, FolderSearch } from 'lucide-react';
 import type { LyricLine } from '../utils/lrcParser';
 import { useAuth } from './hooks/useAuth';
 import {
@@ -54,6 +54,7 @@ export default function App() {
   const [currentSong, setCurrentSong] = useState<Song | null>(null);
   const [showBulkUpload, setShowBulkUpload] = useState(false);
   const [showBulkImages, setShowBulkImages] = useState(false);
+  const [showBulkLyricsImages, setShowBulkLyricsImages] = useState(false);
   const [showScanLibrary, setShowScanLibrary] = useState(false);
   const [editingSong, setEditingSong]   = useState<Song | null>(null);
   const [loading, setLoading]           = useState(true);
@@ -260,6 +261,14 @@ export default function App() {
                       <span className="hidden md:inline">Scan Library</span>
                     </button>
                     <button
+                      onClick={() => setShowBulkLyricsImages(true)}
+                      title="Bulk upload lyrics screenshots — matched by track number"
+                      className="px-4 py-2.5 min-h-[44px] bg-white/5 hover:bg-white/10 border border-white/20 rounded-xl transition-all flex items-center gap-2 font-medium text-sm"
+                    >
+                      <ScrollText className="w-4 h-4" />
+                      <span className="hidden md:inline">Bulk Lyrics</span>
+                    </button>
+                    <button
                       onClick={() => setShowBulkImages(true)}
                       className="px-4 py-2.5 min-h-[44px] bg-white/5 hover:bg-white/10 border border-white/20 rounded-xl transition-all flex items-center gap-2 font-medium text-sm"
                     >
@@ -339,6 +348,9 @@ export default function App() {
       )}
       {showBulkImages && (
         <BulkImageDialog songs={songs} onClose={() => setShowBulkImages(false)} onApply={updateCoverArt} />
+      )}
+      {showBulkLyricsImages && (
+        <BulkImageDialog songs={songs} onClose={() => setShowBulkLyricsImages(false)} onApply={updateLyricsImageFn} mode="lyrics" />
       )}
       {editingSong && (
         <EditSongDialog

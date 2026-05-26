@@ -11,7 +11,7 @@ interface MissingLyricsPanelProps {
 }
 
 export function MissingLyricsPanel({ songs, onSearchOnline, onManualEdit, onAssignImage }: MissingLyricsPanelProps) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(true);
   const [searching, setSearching] = useState<Set<string>>(new Set());
   const [done, setDone] = useState<Set<string>>(new Set());
   const fileRefs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -85,7 +85,7 @@ export function MissingLyricsPanel({ songs, onSearchOnline, onManualEdit, onAssi
                           ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           : <RefreshCw className="w-3.5 h-3.5" />
                         }
-                        <span className="hidden sm:inline">{isSearching ? 'Searching…' : 'Search'}</span>
+                        <span>{isSearching ? 'Searching…' : 'Search'}</span>
                       </button>
 
                       {/* Manual entry */}
@@ -95,7 +95,7 @@ export function MissingLyricsPanel({ songs, onSearchOnline, onManualEdit, onAssi
                         className="flex items-center gap-1 px-2.5 py-1.5 bg-blue-600/80 hover:bg-blue-600 rounded-lg text-xs transition-colors"
                       >
                         <Pencil className="w-3.5 h-3.5" />
-                        <span className="hidden sm:inline">Manual</span>
+                        <span>Manual</span>
                       </button>
 
                       {/* Assign image */}
@@ -105,7 +105,7 @@ export function MissingLyricsPanel({ songs, onSearchOnline, onManualEdit, onAssi
                         className="flex items-center gap-1 px-2.5 py-1.5 bg-emerald-600/80 hover:bg-emerald-600 rounded-lg text-xs transition-colors"
                       >
                         <Image className="w-3.5 h-3.5" />
-                        <span className="hidden sm:inline">Image</span>
+                        <span>Image</span>
                       </button>
                       <input
                         ref={el => { fileRefs.current[song.id] = el; }}
