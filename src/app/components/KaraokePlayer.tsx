@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import {
   ArrowLeft, Play, Pause, SkipBack, SkipForward,
   Volume2, VolumeX, Maximize, Minimize, RefreshCw,
-  ChevronLeft, ChevronRight, ListMusic, X, Repeat,
+  ChevronLeft, ChevronRight, ListMusic, X, Repeat, GripVertical,
 } from 'lucide-react';
 import type { Song } from '../App';
 import { getCurrentLineIndex } from '../../utils/lrcParser';
@@ -28,6 +28,8 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
   const [showImageLyrics, setShowImageLyrics] = useState(false);
   const [queue, setQueue] = useState<Song[]>([]);
   const [autoplay, setAutoplay] = useState(true);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [dragOver, setDragOver] = useState<number | null>(null);
 
   const audioRef = useRef<HTMLAudioElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -245,6 +247,21 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
     }
   }, [song.id, song.title, song.artist, onUpdateLyrics]);
 
+  const handleDragStart = (idx: number) => setDragIdx(idx);
+  const handleDragOver = (e: React.DragEvent, idx: number) => { e.preventDefault(); setDragOver(idx); };
+  const handleDrop = (e: React.DragEvent, toIdx: number) => {
+    e.preventDefault();
+    if (dragIdx !== null && dragIdx !== toIdx) {
+      const reordered = [...upNext];
+      const [item] = reordered.splice(dragIdx, 1);
+      reordered.splice(toIdx, 0, item);
+      setQueue(reordered.map(({ song: s }) => s));
+    }
+    setDragIdx(null);
+    setDragOver(null);
+  };
+  const handleDragEnd = () => { setDragIdx(null); setDragOver(null); };
+
   const controlsFade = isFullscreen && !controlsVisible ? 'opacity-0 pointer-events-none' : 'opacity-100';
 
   return (
@@ -441,10 +458,19 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
               {upNext.length === 0 ? (
                 <p className="text-xs text-gray-600 px-3 pb-3">No songs queued</p>
               ) : (
-                upNext.map(({ song: s, queued }) => (
+                upNext.map(({ song: s, queued }, i) => (
                   <div key={s.id}
-                    className="flex items-center gap-2 px-3 py-2 hover:bg-white/5 cursor-pointer group"
-                    onClick={() => onSelectSong(s)}>
+                    draggable
+                    onDragStart={() => handleDragStart(i)}
+                    onDragOver={e => handleDragOver(e, i)}
+                    onDrop={e => handleDrop(e, i)}
+                    onDragEnd={handleDragEnd}
+                    className={`flex items-center gap-2 px-3 py-2 cursor-pointer group transition-colors relative
+                      ${dragIdx === i ? 'opacity-30' : 'hover:bg-white/5'}
+                      ${dragOver === i && dragIdx !== i ? 'border-t-2 border-purple-400' : ''}
+                    `}
+                    onClick={() => dragIdx === null && onSelectSong(s)}>
+                    <GripVertical className="w-3 h-3 text-gray-600 cursor-grab opacity-0 group-hover:opacity-100 flex-shrink-0 active:cursor-grabbing" />
                     {s.coverArtUrl
                       ? <img src={s.coverArtUrl} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0" />
                       : <div className="w-8 h-8 rounded bg-white/10 flex items-center justify-center flex-shrink-0 text-xs">🎵</div>
