@@ -138,9 +138,15 @@ export function BulkImageDialog({ songs, onClose, onApply, mode = 'cover' }: Bul
   }, [songs]);
 
   const setManual = (i: number, songId: string) => {
-    setMatches(prev => prev.map((m, idx) =>
-      idx === i ? { ...m, manualSongId: songId || null } : m,
-    ));
+    setMatches(prev => prev.map((m, idx) => {
+      if (idx === i) return { ...m, manualSongId: songId || null };
+      // If another row held this song (auto or manual), bump it off
+      if (songId && songId !== SKIP) {
+        if (m.manualSongId === songId) return { ...m, manualSongId: null };
+        if (m.manualSongId === null && m.matchedSongId === songId) return { ...m, matchedSongId: null };
+      }
+      return m;
+    }));
   };
 
   // SKIP sentinel overrides the auto-match; empty string clears manual override only
@@ -221,6 +227,10 @@ export function BulkImageDialog({ songs, onClose, onApply, mode = 'cover' }: Bul
                 const isSkipped = m.manualSongId === SKIP;
                 const isConflict = !!resolved && conflictSongIds.has(resolved);
                 const dropdownValue = isSkipped ? SKIP : (m.manualSongId ?? m.matchedSongId ?? '');
+                // Songs claimed by other rows are hidden from this dropdown
+                const claimedElsewhere = new Set(
+                  matches.flatMap((other, j) => j === i ? [] : [effectiveSongId(other)]).filter(Boolean) as string[]
+                );
                 return (
                   <div key={i} className={`flex items-center gap-4 border rounded-xl p-3 transition-colors ${
                     isSkipped ? 'bg-black/20 border-white/5 opacity-50'
@@ -260,7 +270,7 @@ export function BulkImageDialog({ songs, onClose, onApply, mode = 'cover' }: Bul
                       >
                         <option value="">— assign to song —</option>
                         <option value={SKIP}>✕ Skip this image</option>
-                        {songs.map(s => (
+                        {songs.filter(s => !claimedElsewhere.has(s.id) || s.id === resolved).map(s => (
                           <option key={s.id} value={s.id}>{s.title} – {s.artist}</option>
                         ))}
                       </select>
