@@ -26,6 +26,7 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
   const [controlsVisible, setControlsVisible] = useState(true);
   const [searchingLyrics, setSearchingLyrics] = useState(false);
   const [showImageLyrics, setShowImageLyrics] = useState(false);
+  const [imageLoadError, setImageLoadError] = useState(false);
   const [queue, setQueue] = useState<Song[]>([]);
   const [autoplay, setAutoplay] = useState(true);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
@@ -141,6 +142,7 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
     lineRefs.current = [];
     // If the song has a lyrics image, show it by default; otherwise use text
     setShowImageLyrics(!!song.lyricsImageUrl);
+    setImageLoadError(false);
 
     if (shouldAutoplayRef.current) {
       shouldAutoplayRef.current = false;
@@ -405,7 +407,20 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
           {/* Lyrics image — shown when: no text lyrics, OR user toggled to image */}
           {(showImageLyrics || !hasLyrics) && song.lyricsImageUrl ? (
             <div className="flex-1 overflow-y-auto flex items-center justify-center p-4">
-              <img src={song.lyricsImageUrl} alt="Lyrics" className="max-w-full max-h-full object-contain rounded-xl" />
+              {imageLoadError ? (
+                <div className="flex flex-col items-center gap-3 text-center">
+                  <span className="text-5xl opacity-20">🖼️</span>
+                  <p className="text-gray-500 text-sm">Lyrics image unavailable</p>
+                  <p className="text-gray-600 text-xs">Re-upload the image via the song library</p>
+                </div>
+              ) : (
+                <img
+                  src={song.lyricsImageUrl}
+                  alt="Lyrics"
+                  className="max-w-full max-h-full object-contain rounded-xl"
+                  onError={() => setImageLoadError(true)}
+                />
+              )}
             </div>
           ) : hasLyrics ? (
             <div ref={lyricsContainerRef} className="flex-1 overflow-y-auto py-12 px-6 flex flex-col items-center gap-4"

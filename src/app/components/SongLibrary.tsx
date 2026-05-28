@@ -41,7 +41,7 @@ export function SongLibrary({
   const [manualSong, setManualSong]     = useState<Song | null>(null);
   const [busyId, setBusyId]             = useState<string | null>(null);
 
-  const missingSongs = songs.filter(s => s.syncedLyrics.length === 0 && !s.lyrics.trim());
+  const missingSongs = songs.filter(s => s.syncedLyrics.length === 0 && !s.lyrics.trim() && !s.lyricsImageUrl);
 
   // ── Fuse.js fuzzy search ──────────────────────────────────────────────────
   const fuse = useMemo(() => new Fuse(songs, {
@@ -250,6 +250,8 @@ export function SongLibrary({
                   <div className="relative h-40 bg-[#0a0a0a] flex items-center justify-center overflow-hidden">
                     {song.coverArtUrl
                       ? <img src={song.coverArtUrl} alt={song.title} className="w-full h-full object-cover" />
+                      : song.lyricsImageUrl
+                      ? <img src={song.lyricsImageUrl} alt={song.title} className="w-full h-full object-contain p-1 opacity-70" />
                       : <span className="text-4xl opacity-10">♪</span>
                     }
 
