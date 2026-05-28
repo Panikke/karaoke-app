@@ -36,42 +36,86 @@ function normalizeNum(s: string | null | undefined): string | null {
   return isNaN(n) ? null : String(n);
 }
 
-function findMatch(file: File, songs: Song[], usedIds: Set<string>): Song | null {
-  const fileNorm = normalize(stripExt(file.name));
-  const fileNum  = normalizeNum(leadingNumber(file.name));
-  const avail    = (s: Song) => !usedIds.has(s.id);
+// Number embedded in the filename (leading digits)
+function fNum(file: File): string | null {
+  return normalizeNum(leadingNumber(stripExt(file.name)));
+}
 
-  // 1. Track number match
-  if (fileNum) {
-    for (const song of songs) {
-      if (avail(song) && normalizeNum(song.trackNumber) === fileNum) return song;
+// Text after stripping the leading number — used to match title / artist
+function fText(file: File): string {
+  return normalize(stripExt(file.name)).replace(/^\d+\s*/, '').trim();
+}
+
+/**
+ * Multi-pass matching: most-specific criteria run first so the file that
+ * matches on more criteria (number+title+artist) always beats one that
+ * only matches on fewer (number alone). Each pass assigns unclaimed
+ * files to unclaimed songs.
+ */
+function matchAll(files: File[], songs: Song[]): Array<string | null> {
+  const result = new Array<string | null>(files.length).fill(null);
+  const usedSongs = new Set<string>();
+
+  function pass(test: (f: File, s: Song) => boolean) {
+    for (let i = 0; i < files.length; i++) {
+      if (result[i] !== null) continue;
+      for (const s of songs) {
+        if (usedSongs.has(s.id)) continue;
+        if (test(files[i], s)) { result[i] = s.id; usedSongs.add(s.id); break; }
+      }
     }
   }
 
-  // 2. Leading number in title or artist
-  if (fileNum) {
-    for (const song of songs) {
-      if (!avail(song)) continue;
-      const songNum = normalizeNum(leadingNumber(song.title)) ?? normalizeNum(leadingNumber(song.artist));
-      if (songNum === fileNum) return song;
-    }
-  }
+  // Pass 1 — number + title + artist (most specific)
+  pass((f, s) => {
+    const n = fNum(f), t = fText(f);
+    if (!n || !t) return false;
+    const nt = normalize(s.title), na = normalize(s.artist);
+    return normalizeNum(s.trackNumber) === n
+      && (nt.includes(t) || t.includes(nt))
+      && t.includes(na);
+  });
 
-  // 3. Exact title match
-  for (const song of songs) {
-    if (avail(song) && normalize(song.title) === fileNorm) return song;
-  }
+  // Pass 2 — number + title
+  pass((f, s) => {
+    const n = fNum(f), t = fText(f);
+    if (!n || !t) return false;
+    const nt = normalize(s.title);
+    return normalizeNum(s.trackNumber) === n && (nt.includes(t) || t.includes(nt));
+  });
 
-  // 4. Substring title / artist match
-  for (const song of songs) {
-    if (!avail(song)) continue;
-    const nt = normalize(song.title);
-    const na = normalize(song.artist);
-    if (fileNorm.includes(nt) || nt.includes(fileNorm)) return song;
-    if (fileNorm.includes(na)) return song;
-  }
+  // Pass 3 — number + artist
+  pass((f, s) => {
+    const n = fNum(f), t = fText(f);
+    if (!n || !t) return false;
+    return normalizeNum(s.trackNumber) === n && normalize(s.artist).includes(t);
+  });
 
-  return null;
+  // Pass 4 — number only
+  pass((f, s) => {
+    const n = fNum(f);
+    return !!n && normalizeNum(s.trackNumber) === n;
+  });
+
+  // Pass 5 — leading number in song title / artist field
+  pass((f, s) => {
+    const n = fNum(f);
+    if (!n) return false;
+    const sn = normalizeNum(leadingNumber(s.title)) ?? normalizeNum(leadingNumber(s.artist));
+    return sn === n;
+  });
+
+  // Pass 6 — exact title (whole filename)
+  pass((f, s) => normalize(stripExt(f.name)) === normalize(s.title));
+
+  // Pass 7 — substring title / artist
+  pass((f, s) => {
+    const fn = normalize(stripExt(f.name));
+    const nt = normalize(s.title), na = normalize(s.artist);
+    return fn.includes(nt) || nt.includes(fn) || fn.includes(na);
+  });
+
+  return result;
 }
 
 export function BulkImageDialog({ songs, onClose, onApply, mode = 'cover' }: BulkImageDialogProps) {
@@ -83,12 +127,13 @@ export function BulkImageDialog({ songs, onClose, onApply, mode = 'cover' }: Bul
     const files = Array.from(e.target.files ?? []).filter(f =>
       /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(f.name)
     );
-    const usedIds = new Set<string>();
-    const newMatches: ImageMatch[] = files.map(file => {
-      const match = findMatch(file, songs, usedIds);
-      if (match) usedIds.add(match.id);
-      return { file, previewUrl: URL.createObjectURL(file), matchedSongId: match?.id ?? null, manualSongId: null };
-    });
+    const songIds = matchAll(files, songs);
+    const newMatches: ImageMatch[] = files.map((file, i) => ({
+      file,
+      previewUrl: URL.createObjectURL(file),
+      matchedSongId: songIds[i],
+      manualSongId: null,
+    }));
     setMatches(newMatches);
   }, [songs]);
 
