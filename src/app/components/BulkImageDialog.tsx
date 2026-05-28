@@ -36,32 +36,35 @@ function normalizeNum(s: string | null | undefined): string | null {
   return isNaN(n) ? null : String(n);
 }
 
-function bestMatch(file: File, songs: Song[]): Song | null {
+function findMatch(file: File, songs: Song[], usedIds: Set<string>): Song | null {
   const fileNorm = normalize(stripExt(file.name));
-  const fileNum = normalizeNum(leadingNumber(file.name));
+  const fileNum  = normalizeNum(leadingNumber(file.name));
+  const avail    = (s: Song) => !usedIds.has(s.id);
 
-  // 1. Track number match (highest priority — handles "042.jpg" → trackNumber "42")
+  // 1. Track number match
   if (fileNum) {
     for (const song of songs) {
-      if (normalizeNum(song.trackNumber) === fileNum) return song;
+      if (avail(song) && normalizeNum(song.trackNumber) === fileNum) return song;
     }
   }
 
   // 2. Leading number in title or artist
   if (fileNum) {
     for (const song of songs) {
+      if (!avail(song)) continue;
       const songNum = normalizeNum(leadingNumber(song.title)) ?? normalizeNum(leadingNumber(song.artist));
       if (songNum === fileNum) return song;
     }
   }
 
-  // 2. Exact title match
+  // 3. Exact title match
   for (const song of songs) {
-    if (normalize(song.title) === fileNorm) return song;
+    if (avail(song) && normalize(song.title) === fileNorm) return song;
   }
 
-  // 3. Substring match
+  // 4. Substring title / artist match
   for (const song of songs) {
+    if (!avail(song)) continue;
     const nt = normalize(song.title);
     const na = normalize(song.artist);
     if (fileNorm.includes(nt) || nt.includes(fileNorm)) return song;
@@ -80,13 +83,11 @@ export function BulkImageDialog({ songs, onClose, onApply, mode = 'cover' }: Bul
     const files = Array.from(e.target.files ?? []).filter(f =>
       /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(f.name)
     );
-    const usedSongIds = new Set<string>();
+    const usedIds = new Set<string>();
     const newMatches: ImageMatch[] = files.map(file => {
-      const match = bestMatch(file, songs);
-      const matchId = match?.id ?? null;
-      const uniqueMatchId = matchId && !usedSongIds.has(matchId) ? matchId : null;
-      if (uniqueMatchId) usedSongIds.add(uniqueMatchId);
-      return { file, previewUrl: URL.createObjectURL(file), matchedSongId: uniqueMatchId, manualSongId: null };
+      const match = findMatch(file, songs, usedIds);
+      if (match) usedIds.add(match.id);
+      return { file, previewUrl: URL.createObjectURL(file), matchedSongId: match?.id ?? null, manualSongId: null };
     });
     setMatches(newMatches);
   }, [songs]);
