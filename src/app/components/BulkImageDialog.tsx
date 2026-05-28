@@ -9,6 +9,8 @@ interface BulkImageDialogProps {
   mode?: 'cover' | 'lyrics';
 }
 
+const SKIP = '__skip__';
+
 interface ImageMatch {
   file: File;
   previewUrl: string;
@@ -88,10 +90,14 @@ export function BulkImageDialog({ songs, onClose, onApply, mode = 'cover' }: Bul
   }, [songs]);
 
   const setManual = (i: number, songId: string) => {
-    setMatches(prev => prev.map((m, idx) => idx === i ? { ...m, manualSongId: songId || null } : m));
+    setMatches(prev => prev.map((m, idx) =>
+      idx === i ? { ...m, manualSongId: songId || null } : m,
+    ));
   };
 
-  const effectiveSongId = (m: ImageMatch) => m.manualSongId ?? m.matchedSongId;
+  // SKIP sentinel overrides the auto-match; empty string clears manual override only
+  const effectiveSongId = (m: ImageMatch) =>
+    m.manualSongId === SKIP ? null : (m.manualSongId ?? m.matchedSongId);
 
   const handleApply = async () => {
     setSaving(true);
@@ -153,13 +159,19 @@ export function BulkImageDialog({ songs, onClose, onApply, mode = 'cover' }: Bul
               {matches.map((m, i) => {
                 const resolved = effectiveSongId(m);
                 const song = songs.find(s => s.id === resolved);
+                const isSkipped = m.manualSongId === SKIP;
+                const dropdownValue = isSkipped ? SKIP : (m.manualSongId ?? m.matchedSongId ?? '');
                 return (
-                  <div key={i} className="flex items-center gap-4 bg-black/30 border border-white/10 rounded-xl p-3">
+                  <div key={i} className={`flex items-center gap-4 border rounded-xl p-3 transition-colors ${isSkipped ? 'bg-black/20 border-white/5 opacity-50' : 'bg-black/30 border-white/10'}`}>
                     <img src={m.previewUrl} alt={m.file.name} className="w-14 h-14 object-cover rounded-lg flex-shrink-0" />
 
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium truncate">{m.file.name}</p>
-                      {resolved ? (
+                      {isSkipped ? (
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <span className="text-xs text-gray-500">Skipped — will not be applied</span>
+                        </div>
+                      ) : resolved ? (
                         <div className="flex items-center gap-1.5 mt-1">
                           <CheckCircle className="w-3.5 h-3.5 text-green-400 flex-shrink-0" />
                           <span className="text-xs text-green-400 truncate">→ {song?.title} – {song?.artist}</span>
@@ -170,20 +182,21 @@ export function BulkImageDialog({ songs, onClose, onApply, mode = 'cover' }: Bul
                       ) : (
                         <div className="flex items-center gap-1.5 mt-1">
                           <AlertCircle className="w-3.5 h-3.5 text-yellow-400 flex-shrink-0" />
-                          <span className="text-xs text-yellow-400">No match found</span>
+                          <span className="text-xs text-yellow-400">No match — assign manually or skip</span>
                         </div>
                       )}
                     </div>
 
-                    {/* Manual assignment */}
+                    {/* Manual assignment / skip */}
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <Link2 className="w-4 h-4 text-gray-500" />
                       <select
-                        value={m.manualSongId ?? m.matchedSongId ?? ''}
+                        value={dropdownValue}
                         onChange={e => setManual(i, e.target.value)}
                         className="text-sm px-3 py-1.5 bg-black/40 border border-white/20 rounded-lg text-white focus:outline-none focus:border-purple-500 max-w-[200px]"
                       >
                         <option value="">— assign to song —</option>
+                        <option value={SKIP}>✕ Skip this image</option>
                         {songs.map(s => (
                           <option key={s.id} value={s.id}>{s.title} – {s.artist}</option>
                         ))}
