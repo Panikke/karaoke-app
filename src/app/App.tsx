@@ -199,22 +199,22 @@ export default function App() {
   // ── Loading / error states ──────────────────────────────────────────────────
   if (loading || authLoading) {
     return (
-      <div className="size-full bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center gap-3 text-white">
-        <Loader2 className="w-8 h-8 animate-spin text-pink-400" />
-        <span className="text-xl">Loading library…</span>
+      <div className="size-full bg-[#080808] flex items-center justify-center gap-3 text-white">
+        <Loader2 className="w-8 h-8 animate-spin text-[#ff2d78]" />
+        <span className="text-xl font-light tracking-widest uppercase text-gray-300">Loading…</span>
       </div>
     );
   }
 
   if (loadError) {
     return (
-      <div className="size-full bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 flex items-center justify-center p-8 text-white">
+      <div className="size-full bg-[#080808] flex items-center justify-center p-8 text-white">
         <div className="text-center max-w-md">
           <p className="text-xl font-semibold text-red-400 mb-2">Could not load song library</p>
-          <p className="text-sm text-gray-300 mb-4">{loadError}</p>
+          <p className="text-sm text-gray-500 mb-4">{loadError}</p>
           <button
             onClick={() => { setLoadError(null); setLoading(true); fetchAllSongs().then(setSongs).catch(e => setLoadError(String(e))).finally(() => setLoading(false)); }}
-            className="px-6 py-2 bg-purple-600 hover:bg-purple-700 rounded-xl text-sm"
+            className="px-6 py-2 bg-[#ff2d78] hover:bg-[#ff4d8f] rounded-lg text-sm font-medium"
           >
             Retry
           </button>
@@ -224,7 +224,7 @@ export default function App() {
   }
 
   return (
-    <div className="size-full bg-gradient-to-br from-purple-900 via-blue-900 to-indigo-900 text-white">
+    <div className="size-full bg-[#080808] text-white">
       {currentSong ? (
         <KaraokePlayer
           song={currentSong}
@@ -236,52 +236,52 @@ export default function App() {
       ) : (
         <div className="size-full flex flex-col">
           {/* ── Header ── */}
-          <header className="bg-black/30 backdrop-blur-sm border-b border-white/10 px-6 py-4 flex-shrink-0">
+          <header className="bg-[#0a0a0a] border-b border-[#1a1a1a] px-6 py-4 flex-shrink-0">
             <div className="flex items-center justify-between gap-4">
               <div className="flex items-center gap-3 min-w-0">
-                <Music className="w-8 h-8 text-pink-400 flex-shrink-0" />
-                <h1 className="text-2xl font-bold tracking-tight truncate">Karaoke</h1>
-                <span className="text-sm text-gray-400 flex-shrink-0">{songs.length} songs</span>
+                <Music className="w-7 h-7 text-[#ff2d78] flex-shrink-0 drop-shadow-[0_0_8px_rgba(255,45,120,0.7)]" />
+                <h1 className="text-xl font-bold tracking-widest uppercase truncate text-white">Karaoke</h1>
+                <span className="text-xs text-[#444] font-mono flex-shrink-0">{songs.length}</span>
                 {playlist.length < songs.length && (
-                  <span className="text-xs text-yellow-400 flex-shrink-0">
-                    {playlist.length} in playlist
+                  <span className="text-xs text-[#ff2d78]/70 flex-shrink-0 font-mono">
+                    {playlist.length} active
                   </span>
                 )}
               </div>
 
-              <div className="flex items-center gap-2 flex-shrink-0">
+              <div className="flex items-center gap-1.5 flex-shrink-0">
                 {user && canEditPlaylist && (
                   <>
                     <button
                       onClick={() => setShowScanLibrary(true)}
-                      title="Scan files from the Pi incoming folder (Plex-style, best for large batches)"
-                      className="px-4 py-2.5 min-h-[44px] bg-gradient-to-r from-emerald-500 to-teal-500 rounded-xl hover:from-emerald-600 hover:to-teal-600 transition-all flex items-center gap-2 font-medium text-sm"
+                      title="Scan files from the Pi incoming folder"
+                      className="px-3 py-2 min-h-[40px] bg-[#00d4ff]/10 hover:bg-[#00d4ff]/20 border border-[#00d4ff]/30 hover:border-[#00d4ff]/60 rounded-lg transition-all flex items-center gap-2 text-[#00d4ff] text-xs font-medium"
                     >
                       <FolderSearch className="w-4 h-4" />
-                      <span className="hidden md:inline">Scan Library</span>
+                      <span className="hidden md:inline">Scan</span>
                     </button>
                     <button
                       onClick={() => setShowBulkLyricsImages(true)}
                       title="Bulk upload lyrics screenshots — matched by track number"
-                      className="px-4 py-2.5 min-h-[44px] bg-white/5 hover:bg-white/10 border border-white/20 rounded-xl transition-all flex items-center gap-2 font-medium text-sm"
+                      className="px-3 py-2 min-h-[40px] bg-[#111] hover:bg-[#1a1a1a] border border-[#2a2a2a] hover:border-[#444] rounded-lg transition-all flex items-center gap-2 text-gray-400 hover:text-white text-xs font-medium"
                     >
                       <ScrollText className="w-4 h-4" />
                       <span className="hidden md:inline">Bulk Lyrics</span>
                     </button>
                     <button
                       onClick={() => setShowBulkImages(true)}
-                      className="px-4 py-2.5 min-h-[44px] bg-white/5 hover:bg-white/10 border border-white/20 rounded-xl transition-all flex items-center gap-2 font-medium text-sm"
+                      className="px-3 py-2 min-h-[40px] bg-[#111] hover:bg-[#1a1a1a] border border-[#2a2a2a] hover:border-[#444] rounded-lg transition-all flex items-center gap-2 text-gray-400 hover:text-white text-xs font-medium"
                     >
                       <Images className="w-4 h-4" />
                       <span className="hidden md:inline">Bulk Images</span>
                     </button>
                     <button
                       onClick={() => setShowBulkUpload(true)}
-                      title="HTTP upload (best for 1-5 ad-hoc files)"
-                      className="px-4 py-2.5 min-h-[44px] bg-white/5 hover:bg-white/10 border border-white/20 rounded-xl transition-all flex items-center gap-2 font-medium text-sm"
+                      title="HTTP upload"
+                      className="px-3 py-2 min-h-[40px] bg-[#ff2d78]/10 hover:bg-[#ff2d78]/20 border border-[#ff2d78]/30 hover:border-[#ff2d78]/60 rounded-lg transition-all flex items-center gap-2 text-[#ff2d78] text-xs font-medium"
                     >
                       <FolderUp className="w-4 h-4" />
-                      <span className="hidden md:inline">Upload Songs</span>
+                      <span className="hidden md:inline">Upload</span>
                     </button>
                   </>
                 )}
@@ -289,30 +289,30 @@ export default function App() {
                 {user && isAdmin && (
                   <button
                     onClick={() => setShowAdmin(true)}
-                    className="px-4 py-2.5 min-h-[44px] bg-purple-600/40 hover:bg-purple-600/60 border border-purple-500/40 rounded-xl flex items-center gap-2 text-sm font-medium transition-all"
+                    className="px-3 py-2 min-h-[40px] bg-[#111] hover:bg-[#1a1a1a] border border-[#2a2a2a] hover:border-purple-500/50 rounded-lg flex items-center gap-2 text-xs font-medium transition-all text-gray-400 hover:text-purple-400"
                   >
-                    <Shield className="w-4 h-4 text-purple-300" />
-                    <span className="hidden sm:inline text-purple-300">Admin</span>
+                    <Shield className="w-4 h-4" />
+                    <span className="hidden sm:inline">Admin</span>
                   </button>
                 )}
 
                 {user ? (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-400 hidden sm:block truncate max-w-[100px]">
+                  <div className="flex items-center gap-2 ml-1">
+                    <span className="text-xs text-[#444] hidden sm:block truncate max-w-[100px]">
                       {profile?.display_name || user.email?.split('@')[0]}
                     </span>
                     <button
                       onClick={signOut}
                       title="Sign out"
-                      className="p-2.5 bg-white/5 hover:bg-white/10 border border-white/10 rounded-xl transition-colors"
+                      className="p-2 bg-[#111] hover:bg-[#1a1a1a] border border-[#2a2a2a] rounded-lg transition-colors"
                     >
-                      <LogOut className="w-4 h-4 text-gray-400" />
+                      <LogOut className="w-4 h-4 text-[#444] hover:text-white" />
                     </button>
                   </div>
                 ) : (
                   <button
                     onClick={() => setShowLogin(true)}
-                    className="flex items-center gap-2 px-4 py-2.5 min-h-[44px] bg-white/5 hover:bg-white/10 border border-white/20 rounded-xl text-sm transition-colors"
+                    className="flex items-center gap-2 px-3 py-2 min-h-[40px] bg-[#ff2d78]/10 hover:bg-[#ff2d78]/20 border border-[#ff2d78]/40 rounded-lg text-[#ff2d78] text-xs font-medium transition-colors"
                   >
                     <LogIn className="w-4 h-4" />
                     <span className="hidden sm:inline">Sign In</span>
