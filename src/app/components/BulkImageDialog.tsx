@@ -80,12 +80,14 @@ export function BulkImageDialog({ songs, onClose, onApply, mode = 'cover' }: Bul
     const files = Array.from(e.target.files ?? []).filter(f =>
       /\.(jpg|jpeg|png|webp|gif|svg)$/i.test(f.name)
     );
-    const newMatches: ImageMatch[] = files.map(file => ({
-      file,
-      previewUrl: URL.createObjectURL(file),
-      matchedSongId: bestMatch(file, songs)?.id ?? null,
-      manualSongId: null,
-    }));
+    const usedSongIds = new Set<string>();
+    const newMatches: ImageMatch[] = files.map(file => {
+      const match = bestMatch(file, songs);
+      const matchId = match?.id ?? null;
+      const uniqueMatchId = matchId && !usedSongIds.has(matchId) ? matchId : null;
+      if (uniqueMatchId) usedSongIds.add(uniqueMatchId);
+      return { file, previewUrl: URL.createObjectURL(file), matchedSongId: uniqueMatchId, manualSongId: null };
+    });
     setMatches(newMatches);
   }, [songs]);
 
@@ -101,7 +103,13 @@ export function BulkImageDialog({ songs, onClose, onApply, mode = 'cover' }: Bul
 
   const handleApply = async () => {
     setSaving(true);
-    const toApply = matches.filter(m => effectiveSongId(m));
+    // Deduplicate: last assignment for each song wins
+    const seen = new Map<string, ImageMatch>();
+    for (const m of matches) {
+      const id = effectiveSongId(m);
+      if (id) seen.set(id, m);
+    }
+    const toApply = Array.from(seen.values());
     for (const m of toApply) {
       await onApply(effectiveSongId(m)!, m.file);
     }
@@ -110,6 +118,11 @@ export function BulkImageDialog({ songs, onClose, onApply, mode = 'cover' }: Bul
   };
 
   const matchCount = matches.filter(m => effectiveSongId(m)).length;
+
+  // Songs assigned to more than one image — highlight as conflicts
+  const songIdCount = new Map<string, number>();
+  matches.forEach(m => { const id = effectiveSongId(m); if (id) songIdCount.set(id, (songIdCount.get(id) ?? 0) + 1); });
+  const conflictSongIds = new Set([...songIdCount.entries()].filter(([, c]) => c > 1).map(([id]) => id));
 
   return (
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
@@ -160,9 +173,14 @@ export function BulkImageDialog({ songs, onClose, onApply, mode = 'cover' }: Bul
                 const resolved = effectiveSongId(m);
                 const song = songs.find(s => s.id === resolved);
                 const isSkipped = m.manualSongId === SKIP;
+                const isConflict = !!resolved && conflictSongIds.has(resolved);
                 const dropdownValue = isSkipped ? SKIP : (m.manualSongId ?? m.matchedSongId ?? '');
                 return (
-                  <div key={i} className={`flex items-center gap-4 border rounded-xl p-3 transition-colors ${isSkipped ? 'bg-black/20 border-white/5 opacity-50' : 'bg-black/30 border-white/10'}`}>
+                  <div key={i} className={`flex items-center gap-4 border rounded-xl p-3 transition-colors ${
+                    isSkipped ? 'bg-black/20 border-white/5 opacity-50'
+                    : isConflict ? 'bg-yellow-900/20 border-yellow-500/30'
+                    : 'bg-black/30 border-white/10'
+                  }`}>
                     <img src={m.previewUrl} alt={m.file.name} className="w-14 h-14 object-cover rounded-lg flex-shrink-0" />
 
                     <div className="flex-1 min-w-0">
@@ -173,11 +191,10 @@ export function BulkImageDialog({ songs, onClose, onApply, mode = 'cover' }: Bul
                         </div>
                       ) : resolved ? (
                         <div className="flex items-center gap-1.5 mt-1">
-                          <CheckCircle className="w-3.5 h-3.5 text-green-400 flex-shrink-0" />
-                          <span className="text-xs text-green-400 truncate">→ {song?.title} – {song?.artist}</span>
-                          {m.matchedSongId && !m.manualSongId && (
-                            <span className="text-xs text-gray-500">(auto)</span>
-                          )}
+                          <CheckCircle className={`w-3.5 h-3.5 flex-shrink-0 ${isConflict ? 'text-yellow-400' : 'text-green-400'}`} />
+                          <span className={`text-xs truncate ${isConflict ? 'text-yellow-400' : 'text-green-400'}`}>→ {song?.title} – {song?.artist}</span>
+                          {m.matchedSongId && !m.manualSongId && <span className="text-xs text-gray-500">(auto)</span>}
+                          {isConflict && <span className="text-xs text-yellow-500 font-medium">duplicate — last wins</span>}
                         </div>
                       ) : (
                         <div className="flex items-center gap-1.5 mt-1">
