@@ -267,14 +267,14 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
   return (
     <div
       ref={containerRef}
-      className="size-full flex flex-col bg-gradient-to-br from-purple-950 via-blue-950 to-indigo-950 text-white select-none"
+      className="size-full flex flex-col bg-black text-white select-none"
       onPointerMove={showControls}
       onPointerDown={showControls}
     >
       <audio ref={audioRef} src={song.audioUrl} />
 
       {/* ── Header ── */}
-      <header className={`flex-shrink-0 bg-black/50 backdrop-blur-sm border-b border-white/10 px-3 py-2 flex items-center gap-2 transition-opacity duration-300 ${controlsFade}`}>
+      <header className={`flex-shrink-0 bg-[#0a0a0a] border-b border-[#1a1a1a] px-3 py-2 flex items-center gap-2 transition-opacity duration-300 ${controlsFade}`}>
         <button
           onClick={onBack}
           className="flex items-center gap-1.5 text-gray-300 hover:text-white min-w-[48px] min-h-[48px] px-3 rounded-lg hover:bg-white/10 transition-colors"
@@ -319,14 +319,14 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
       <div className="flex-1 flex overflow-hidden min-h-0">
 
         {/* ── Left panel — cover art + controls ── */}
-        <div className={`flex-shrink-0 flex flex-col items-center justify-between py-4 px-5 w-[260px] lg:w-[300px] xl:w-[340px] border-r border-white/10 transition-opacity duration-300 ${controlsFade}`}>
+        <div className={`flex-shrink-0 flex flex-col items-center justify-between py-4 px-5 w-[260px] lg:w-[300px] xl:w-[340px] border-r border-[#1a1a1a] bg-[#080808] transition-opacity duration-300 ${controlsFade}`}>
 
           <div className="flex-1 flex items-center justify-center w-full min-h-0 py-2">
             {song.coverArtUrl ? (
               <img src={song.coverArtUrl} alt={song.title} className="rounded-2xl shadow-2xl object-cover max-h-full max-w-full aspect-square" />
             ) : (
-              <div className="w-32 h-32 rounded-2xl bg-white/10 flex items-center justify-center shadow-xl">
-                <span className="text-5xl">🎵</span>
+              <div className="w-32 h-32 rounded-2xl bg-[#111] border border-[#222] flex items-center justify-center shadow-xl">
+                <span className="text-4xl opacity-20">♪</span>
               </div>
             )}
           </div>
@@ -378,10 +378,10 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
           <button
             onClick={() => setAutoplay(a => !a)}
             title={autoplay ? 'Autoplay on — click to turn off' : 'Autoplay off — click to turn on'}
-            className={`mt-3 w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-sm font-medium transition-all ${
+            className={`mt-3 w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
               autoplay
-                ? 'bg-pink-500/20 border border-pink-500/40 text-pink-300 hover:bg-pink-500/30'
-                : 'bg-white/5 border border-white/10 text-gray-500 hover:bg-white/10 hover:text-gray-300'
+                ? 'bg-[#ff2d78]/10 border border-[#ff2d78]/30 text-[#ff2d78] hover:bg-[#ff2d78]/20'
+                : 'bg-[#111] border border-[#222] text-[#444] hover:text-[#888]'
             }`}
           >
             <Repeat className="w-4 h-4" />
@@ -443,10 +443,10 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
         </div>
 
         {/* ── Right panel — Up Next + All Songs ── */}
-        <div className="flex-shrink-0 w-[200px] lg:w-[220px] xl:w-[240px] border-l border-white/10 flex flex-col overflow-hidden">
+        <div className="flex-shrink-0 w-[200px] lg:w-[220px] xl:w-[240px] border-l border-[#1a1a1a] bg-[#080808] flex flex-col overflow-hidden">
 
           {/* Up Next */}
-          <div className="flex-shrink-0 border-b border-white/10 flex flex-col" style={{ maxHeight: '45%' }}>
+          <div className="flex-shrink-0 border-b border-[#1a1a1a] flex flex-col" style={{ maxHeight: '45%' }}>
             <div className="flex items-center gap-2 px-3 py-2 flex-shrink-0">
               <ListMusic className="w-4 h-4 text-purple-400 flex-shrink-0" />
               <span className="text-xs font-semibold text-gray-300 uppercase tracking-wide">Up Next</span>
@@ -470,7 +470,7 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
                       ${dragOver === i && dragIdx !== i ? 'border-t-2 border-purple-400' : ''}
                     `}
                     onClick={() => dragIdx === null && onSelectSong(s)}>
-                    <GripVertical className="w-3 h-3 text-gray-600 cursor-grab opacity-0 group-hover:opacity-100 flex-shrink-0 active:cursor-grabbing" />
+                    <GripVertical className="w-4 h-4 text-gray-500 cursor-grab flex-shrink-0 active:cursor-grabbing hover:text-gray-300" />
                     {s.coverArtUrl
                       ? <img src={s.coverArtUrl} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0" />
                       : <div className="w-8 h-8 rounded bg-white/10 flex items-center justify-center flex-shrink-0 text-xs">🎵</div>
@@ -495,7 +495,7 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
 
           {/* All Songs */}
           <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-            <div className="flex items-center gap-2 px-3 py-2 flex-shrink-0 border-b border-white/5">
+            <div className="flex items-center gap-2 px-3 py-2 flex-shrink-0 border-b border-[#161616]">
               <span className="text-xs font-semibold text-gray-300 uppercase tracking-wide">All Songs</span>
               <span className="ml-auto text-xs text-gray-600">{otherSongs.length}</span>
             </div>

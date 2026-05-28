@@ -23,10 +23,10 @@ interface SongLibraryProps {
 }
 
 const lyricsBadge = (song: Song) => {
-  if (song.syncedLyrics.length > 0) return { label: 'Synced', cls: 'bg-pink-500/20 text-pink-300' };
-  if (song.lyrics.trim())           return { label: 'Lyrics', cls: 'bg-green-500/20 text-green-300' };
-  if (song.lyricsImageUrl)          return { label: 'Image',  cls: 'bg-blue-500/20 text-blue-300' };
-  return { label: 'No lyrics', cls: 'bg-yellow-500/20 text-yellow-300' };
+  if (song.syncedLyrics.length > 0) return { label: 'Synced', cls: 'bg-[#00d4ff]/10 text-[#00d4ff] border border-[#00d4ff]/20' };
+  if (song.lyrics.trim())           return { label: 'Lyrics', cls: 'bg-[#00ff88]/10 text-[#00ff88] border border-[#00ff88]/20' };
+  if (song.lyricsImageUrl)          return { label: 'Image',  cls: 'bg-[#a855f7]/10 text-[#a855f7] border border-[#a855f7]/20' };
+  return { label: 'No lyrics', cls: 'bg-[#333]/60 text-[#666] border border-[#333]' };
 };
 
 export function SongLibrary({
@@ -120,43 +120,43 @@ export function SongLibrary({
   const selectedCount = Array.from(selectedIds).filter(id => filtered.some(s => s.id === id)).length;
 
   return (
-    <div className="flex-1 overflow-hidden flex flex-col p-4 gap-3">
+    <div className="flex-1 overflow-hidden flex flex-col p-4 gap-3 bg-[#080808]">
 
       {/* ── Search + bulk action bar ── */}
       <div className="flex gap-2 flex-wrap items-center">
         <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#444] pointer-events-none" />
           <input
             type="text"
-            placeholder="Search by title, artist, track number…"
+            placeholder="Search songs, artists, track numbers…"
             value={query}
             onChange={e => setQuery(e.target.value)}
-            className="w-full pl-11 pr-4 py-3 bg-black/30 backdrop-blur-sm border border-white/20 rounded-xl text-white placeholder-gray-400 focus:outline-none focus:border-purple-500"
+            className="w-full pl-11 pr-4 py-3 bg-[#111] border border-[#222] rounded-xl text-white placeholder-[#444] focus:outline-none focus:border-[#ff2d78]/50 transition-colors text-sm"
           />
           {query && (
             <button
               onClick={() => setQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-white text-lg leading-none"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#444] hover:text-white text-lg leading-none"
             >×</button>
           )}
         </div>
 
         {query && filtered.length > 0 && (
-          <span className="text-xs text-gray-500 hidden sm:block">
-            {filtered.length} match{filtered.length !== 1 ? 'es' : ''} (nearest first)
+          <span className="text-xs text-[#444] font-mono hidden sm:block">
+            {filtered.length} found
           </span>
         )}
 
         {canEdit && (
           <button
             onClick={toggleSelectAll}
-            className="flex items-center gap-2 px-4 py-3 bg-black/30 border border-white/20 hover:border-purple-500/50 rounded-xl text-sm transition-colors"
+            className="flex items-center gap-2 px-4 py-3 bg-[#111] border border-[#222] hover:border-[#ff2d78]/40 rounded-xl text-sm transition-colors"
           >
             {allFilteredSelected
-              ? <CheckSquare className="w-4 h-4 text-purple-400" />
-              : <Square className="w-4 h-4 text-gray-400" />
+              ? <CheckSquare className="w-4 h-4 text-[#ff2d78]" />
+              : <Square className="w-4 h-4 text-[#555]" />
             }
-            <span className="text-gray-300 hidden sm:inline">
+            <span className="text-[#888] hidden sm:inline">
               {allFilteredSelected ? 'Deselect All' : 'Select All'}
             </span>
           </button>
@@ -166,7 +166,7 @@ export function SongLibrary({
           <button
             onClick={handleBulkSearchLyrics}
             disabled={searchingLyrics}
-            className="flex items-center gap-2 px-4 py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-700 rounded-xl text-sm transition-colors"
+            className="flex items-center gap-2 px-4 py-3 bg-[#ff2d78]/10 hover:bg-[#ff2d78]/20 border border-[#ff2d78]/30 hover:border-[#ff2d78]/60 disabled:opacity-40 rounded-xl text-sm text-[#ff2d78] transition-colors"
           >
             {searchingLyrics ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
             <span>
@@ -180,19 +180,19 @@ export function SongLibrary({
 
         {canEdit && songs.length > 0 && (
           confirmClear ? (
-            <div className="flex items-center gap-2 px-4 py-3 bg-red-900/40 border border-red-500/50 rounded-xl text-sm">
+            <div className="flex items-center gap-2 px-4 py-3 bg-red-900/20 border border-red-500/30 rounded-xl text-sm">
               <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0" />
               <span className="text-red-300 hidden sm:inline">Delete all {songs.length} songs?</span>
               <button onClick={handleClearLibrary} className="px-2 py-0.5 bg-red-500 hover:bg-red-600 rounded text-white text-xs font-medium">Yes</button>
-              <button onClick={() => setConfirmClear(false)} className="px-2 py-0.5 bg-gray-600 hover:bg-gray-500 rounded text-white text-xs">No</button>
+              <button onClick={() => setConfirmClear(false)} className="px-2 py-0.5 bg-[#222] hover:bg-[#333] rounded text-white text-xs">No</button>
             </div>
           ) : (
             <button
               onClick={() => setConfirmClear(true)}
-              className="flex items-center gap-2 px-4 py-3 bg-black/30 border border-white/20 hover:border-red-500/50 hover:text-red-400 rounded-xl text-sm text-gray-400 transition-colors"
+              className="flex items-center gap-2 px-4 py-3 bg-[#111] border border-[#222] hover:border-red-500/40 hover:text-red-400 rounded-xl text-sm text-[#444] transition-colors"
             >
               <Trash2 className="w-4 h-4" />
-              <span className="hidden sm:inline">Clear Library</span>
+              <span className="hidden sm:inline">Clear</span>
             </button>
           )
         )}
@@ -201,22 +201,22 @@ export function SongLibrary({
       {/* ── Song grid ── */}
       <div className="flex-1 overflow-y-auto">
         {filtered.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center gap-4 text-gray-400">
+          <div className="h-full flex flex-col items-center justify-center gap-4 text-[#333]">
             <Music2 className="w-16 h-16 opacity-20" />
-            <p className="text-xl">
+            <p className="text-lg font-light tracking-wide text-[#555]">
               {songs.length === 0
-                ? 'No songs yet — sign in and click Upload Songs to start'
+                ? 'No songs yet — sign in and upload to start'
                 : query ? `No matches for "${query}"` : 'No results'
               }
             </p>
             {query && (
-              <button onClick={() => setQuery('')} className="text-sm text-purple-400 hover:text-purple-300">
+              <button onClick={() => setQuery('')} className="text-sm text-[#ff2d78]/70 hover:text-[#ff2d78]">
                 Clear search
               </button>
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 pb-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 pb-4">
             {filtered.map(song => {
               const badge      = lyricsBadge(song);
               const isSelected = selectedIds.has(song.id);
@@ -226,12 +226,12 @@ export function SongLibrary({
               return (
                 <div
                   key={song.id}
-                  className={`bg-black/30 backdrop-blur-sm border rounded-xl transition-all group cursor-pointer relative ${
+                  className={`bg-[#0f0f0f] border rounded-xl transition-all group cursor-pointer relative overflow-hidden ${
                     isSelected
-                      ? 'border-purple-500/80 ring-1 ring-purple-500/40'
+                      ? 'border-[#ff2d78]/60 shadow-[0_0_20px_rgba(255,45,120,0.1)]'
                       : inPlaylist
-                      ? 'border-white/10 hover:border-purple-500/60'
-                      : 'border-white/5 opacity-60 hover:opacity-80 hover:border-white/20'
+                      ? 'border-[#1f1f1f] hover:border-[#ff2d78]/30 hover:shadow-[0_0_20px_rgba(255,45,120,0.07)]'
+                      : 'border-[#1a1a1a] opacity-50 hover:opacity-70 hover:border-[#2a2a2a]'
                   }`}
                   onClick={() => onSelectSong(song)}
                 >
@@ -241,31 +241,31 @@ export function SongLibrary({
                       className="absolute top-2 left-2 z-10 p-1"
                     >
                       {isSelected
-                        ? <CheckSquare className="w-4 h-4 text-purple-400" />
-                        : <Square className="w-4 h-4 text-gray-500 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        ? <CheckSquare className="w-4 h-4 text-[#ff2d78]" />
+                        : <Square className="w-4 h-4 text-[#444] opacity-0 group-hover:opacity-100 transition-opacity" />
                       }
                     </button>
                   )}
 
-                  <div className="relative h-40 bg-gradient-to-br from-purple-900/40 to-blue-900/40 flex items-center justify-center rounded-t-xl overflow-hidden">
+                  <div className="relative h-40 bg-[#0a0a0a] flex items-center justify-center overflow-hidden">
                     {song.coverArtUrl
                       ? <img src={song.coverArtUrl} alt={song.title} className="w-full h-full object-cover" />
-                      : <span className="text-5xl opacity-30">🎵</span>
+                      : <span className="text-4xl opacity-10">♪</span>
                     }
 
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                      <div className="w-14 h-14 bg-white/20 backdrop-blur-sm rounded-full flex items-center justify-center border-2 border-white/60">
-                        <Play className="w-6 h-6 text-white ml-0.5" />
+                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                      <div className="w-12 h-12 bg-[#ff2d78] rounded-full flex items-center justify-center shadow-[0_0_20px_rgba(255,45,120,0.5)]">
+                        <Play className="w-5 h-5 text-white ml-0.5" />
                       </div>
                     </div>
 
-                    <span className={`absolute bottom-2 left-2 text-xs px-2 py-0.5 rounded-full font-medium ${badge.cls}`}>
+                    <span className={`absolute bottom-2 left-2 text-[10px] px-2 py-0.5 rounded-full font-medium ${badge.cls}`}>
                       {badge.label}
                     </span>
 
                     {!inPlaylist && (
-                      <span className="absolute bottom-2 right-2 text-xs px-2 py-0.5 rounded-full bg-gray-700/80 text-gray-400">
-                        Off playlist
+                      <span className="absolute bottom-2 right-2 text-[10px] px-2 py-0.5 rounded-full bg-[#111] text-[#444] border border-[#222]">
+                        off
                       </span>
                     )}
 
@@ -273,33 +273,33 @@ export function SongLibrary({
                       <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
                         <button
                           onClick={e => { e.stopPropagation(); onEditSong(song); }}
-                          className="p-1.5 bg-black/60 hover:bg-blue-500/80 rounded-lg transition-colors"
+                          className="p-1.5 bg-black/80 hover:bg-[#00d4ff]/20 border border-transparent hover:border-[#00d4ff]/40 rounded-lg transition-colors"
                           title="Edit song info"
                         >
-                          <Pencil className="w-3.5 h-3.5 text-white" />
+                          <Pencil className="w-3.5 h-3.5 text-[#888] hover:text-[#00d4ff]" />
                         </button>
                         <button
                           onClick={e => { e.stopPropagation(); handleTogglePlaylist(song.id); }}
                           disabled={isBusy}
-                          className={`p-1.5 rounded-lg transition-colors ${inPlaylist ? 'bg-black/60 hover:bg-yellow-500/80' : 'bg-green-600/80 hover:bg-green-500'}`}
+                          className={`p-1.5 rounded-lg transition-colors border ${inPlaylist ? 'bg-black/80 hover:bg-yellow-500/20 border-transparent hover:border-yellow-500/40' : 'bg-[#00ff88]/20 border-[#00ff88]/30 hover:bg-[#00ff88]/30'}`}
                           title={inPlaylist ? 'Remove from playlist' : 'Add to playlist'}
                         >
                           {isBusy
                             ? <Loader2 className="w-3.5 h-3.5 text-white animate-spin" />
                             : inPlaylist
-                            ? <ListX className="w-3.5 h-3.5 text-white" />
-                            : <ListMusic className="w-3.5 h-3.5 text-white" />
+                            ? <ListX className="w-3.5 h-3.5 text-[#888]" />
+                            : <ListMusic className="w-3.5 h-3.5 text-[#00ff88]" />
                           }
                         </button>
                         <button
                           onClick={e => { e.stopPropagation(); handleDeleteSong(song.id); }}
                           disabled={isBusy}
-                          className="p-1.5 bg-black/60 hover:bg-red-500/80 rounded-lg transition-colors"
+                          className="p-1.5 bg-black/80 hover:bg-red-500/20 border border-transparent hover:border-red-500/40 rounded-lg transition-colors"
                           title="Delete song"
                         >
                           {isBusy
-                            ? <Loader2 className="w-3.5 h-3.5 text-white animate-spin" />
-                            : <Trash2 className="w-3.5 h-3.5 text-white" />
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin text-[#888]" />
+                            : <Trash2 className="w-3.5 h-3.5 text-[#888]" />
                           }
                         </button>
                       </div>
@@ -307,14 +307,13 @@ export function SongLibrary({
                   </div>
 
                   <div className="p-3">
-                    <h3 className="font-semibold truncate text-sm">
+                    <h3 className="font-semibold truncate text-sm text-white">
                       {song.trackNumber && (
-                        <span className="font-mono text-purple-300 mr-1">{song.trackNumber}</span>
+                        <span className="font-mono text-[#ff2d78]/60 mr-1.5 text-xs">{song.trackNumber}</span>
                       )}
                       {song.title}
                     </h3>
-                    <p className="text-xs text-gray-400 truncate mt-0.5">{song.artist}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">{song.language}</p>
+                    <p className="text-xs text-[#555] truncate mt-0.5">{song.artist}</p>
                   </div>
                 </div>
               );
