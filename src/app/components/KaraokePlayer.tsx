@@ -19,20 +19,20 @@ interface KaraokePlayerProps {
 }
 
 export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, onSelectSong, onUpdateLyrics }: KaraokePlayerProps) {
-  const [isPlaying, setIsPlaying]           = useState(false);
-  const [currentTime, setCurrentTime]       = useState(0);
-  const [duration, setDuration]             = useState(0);
-  const [volume, setVolume]                 = useState(1);
-  const [muted, setMuted]                   = useState(false);
-  const [isFullscreen, setIsFullscreen]     = useState(false);
+  const [isPlaying, setIsPlaying]             = useState(false);
+  const [currentTime, setCurrentTime]         = useState(0);
+  const [duration, setDuration]               = useState(0);
+  const [volume, setVolume]                   = useState(1);
+  const [muted, setMuted]                     = useState(false);
+  const [isFullscreen, setIsFullscreen]       = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [searchingLyrics, setSearchingLyrics] = useState(false);
   const [showImageLyrics, setShowImageLyrics] = useState(false);
-  const [imageLoadError, setImageLoadError] = useState(false);
-  const [imageFull, setImageFull]           = useState(false);
-  const [autoplay, setAutoplay]             = useState(true);
-  const [dragIdx, setDragIdx]               = useState<number | null>(null);
-  const [dragOver, setDragOver]             = useState<number | null>(null);
+  const [imageLoadError, setImageLoadError]   = useState(false);
+  const [imageFull, setImageFull]             = useState(false);
+  const [autoplay, setAutoplay]               = useState(true);
+  const [dragIdx, setDragIdx]                 = useState<number | null>(null);
+  const [dragOver, setDragOver]               = useState<number | null>(null);
 
   const audioRef           = useRef<HTMLAudioElement>(null);
   const containerRef       = useRef<HTMLDivElement>(null);
@@ -72,14 +72,14 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
   const currentPlainIdx  = (!hasSynced && hasPlain && plainLineCumulativeTimes.length > 0)
     ? plainLineCumulativeTimes.reduce((best, t, i) => t <= currentTime ? i : best, 0)
     : -1;
-  const currentLineIdx  = hasSynced ? currentSyncedIdx : currentPlainIdx;
-  const lyricsLines     = hasSynced ? syncedLines.map(l => l.text) : plainLines;
-  const hasLyrics       = lyricsLines.length > 0;
+  const currentLineIdx = hasSynced ? currentSyncedIdx : currentPlainIdx;
+  const lyricsLines    = hasSynced ? syncedLines.map(l => l.text) : plainLines;
+  const hasLyrics      = lyricsLines.length > 0;
 
-  const currentIdx   = playlist.findIndex(s => s.id === song.id);
-  const prevSong     = currentIdx > 0 ? playlist[currentIdx - 1] : null;
+  const currentIdx     = playlist.findIndex(s => s.id === song.id);
+  const prevSong       = currentIdx > 0 ? playlist[currentIdx - 1] : null;
   const sequentialNext = currentIdx < playlist.length - 1 ? playlist[currentIdx + 1] : null;
-  const nextSong     = queue.length > 0 ? queue[0] : sequentialNext;
+  const nextSong       = queue.length > 0 ? queue[0] : sequentialNext;
 
   const upNext: Array<{ song: Song; queued: boolean }> = [
     ...queue.map(s => ({ song: s, queued: true })),
@@ -107,7 +107,7 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
       onQueueChange(prev => prev.slice(1));
       onSelectSong(next);
     } else {
-      const pl = playlistRef.current;
+      const pl  = playlistRef.current;
       const idx = pl.findIndex(s => s.id === currentSongRef.current.id);
       if (idx < pl.length - 1) onSelectSong(pl[idx + 1]);
     }
@@ -194,8 +194,8 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
   useEffect(() => {
     if (!('mediaSession' in navigator)) return;
     navigator.mediaSession.metadata = new MediaMetadata({
-      title: song.title,
-      artist: song.artist,
+      title:   song.title,
+      artist:  song.artist,
       artwork: song.coverArtUrl ? [{ src: song.coverArtUrl, sizes: '512x512', type: 'image/png' }] : [],
     });
     navigator.mediaSession.setActionHandler('play',          () => { audioRef.current?.play(); setIsPlaying(true); });
@@ -230,9 +230,9 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
     else           { audio.play();  setIsPlaying(true);  }
   }, [isPlaying]);
 
-  const seek  = (v: number) => { if (audioRef.current) { audioRef.current.currentTime = v; setCurrentTime(v); } };
-  const skip  = (s: number) => { if (audioRef.current) audioRef.current.currentTime = Math.max(0, Math.min(duration, currentTime + s)); };
-  const fmt   = (t: number) => !isFinite(t) ? '0:00' : `${Math.floor(t / 60)}:${Math.floor(t % 60).toString().padStart(2, '0')}`;
+  const seek = (v: number) => { if (audioRef.current) { audioRef.current.currentTime = v; setCurrentTime(v); } };
+  const skip = (s: number) => { if (audioRef.current) audioRef.current.currentTime = Math.max(0, Math.min(duration, currentTime + s)); };
+  const fmt  = (t: number) => !isFinite(t) ? '0:00' : `${Math.floor(t / 60)}:${Math.floor(t % 60).toString().padStart(2, '0')}`;
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) containerRef.current?.requestFullscreen();
@@ -264,23 +264,23 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
   };
   const handleDragEnd = () => { setDragIdx(null); setDragOver(null); };
 
-  const controlsFade   = isFullscreen && !controlsVisible ? 'opacity-0 pointer-events-none' : 'opacity-100';
-  const showingImage   = (showImageLyrics || !hasLyrics) && !!song.lyricsImageUrl && !imageLoadError;
+  const controlsFade = isFullscreen && !controlsVisible ? 'opacity-0 pointer-events-none' : 'opacity-100';
+  const showingImage = (showImageLyrics || !hasLyrics) && !!song.lyricsImageUrl && !imageLoadError;
 
   return (
     <div
       ref={containerRef}
-      className="size-full flex flex-col bg-black text-white select-none"
+      className="size-full flex flex-col bg-slate-900 text-white select-none"
       onPointerMove={showControls}
       onPointerDown={showControls}
     >
       <audio ref={audioRef} src={song.audioUrl} />
 
       {/* ── Header ── */}
-      <header className={`flex-shrink-0 bg-black border-b border-white/10 px-3 py-2 flex items-center gap-2 transition-opacity duration-300 ${controlsFade}`}>
+      <header className={`flex-shrink-0 bg-slate-900 border-b border-slate-700 px-3 py-2 flex items-center gap-2 transition-opacity duration-300 ${controlsFade}`}>
         <button
           onClick={onBack}
-          className="flex items-center gap-1.5 text-white/50 hover:text-white min-w-[48px] min-h-[48px] px-3 rounded hover:bg-white/10 transition-colors"
+          className="flex items-center gap-1.5 text-slate-300 hover:text-white min-w-[48px] min-h-[48px] px-3 rounded hover:bg-slate-700 transition-colors"
         >
           <ArrowLeft className="w-5 h-5 flex-shrink-0" />
           <span className="text-sm hidden sm:inline">Library</span>
@@ -288,17 +288,17 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
 
         <div className="flex-1 text-center px-2 min-w-0">
           <p className="font-bold truncate leading-tight">{song.title}</p>
-          <p className="text-sm text-white/40 truncate leading-tight">{song.artist}</p>
+          <p className="text-sm text-slate-400 truncate leading-tight">{song.artist}</p>
         </div>
 
         <div className="flex items-center gap-1 flex-shrink-0">
           {prevSong && (
-            <button onClick={() => onSelectSong(prevSong)} className="min-w-[48px] min-h-[48px] flex items-center justify-center hover:bg-white/10 rounded transition-colors" title={prevSong.title}>
+            <button onClick={() => onSelectSong(prevSong)} className="min-w-[48px] min-h-[48px] flex items-center justify-center hover:bg-slate-700 rounded transition-colors" title={prevSong.title}>
               <ChevronLeft className="w-5 h-5" />
             </button>
           )}
           {nextSong && (
-            <button onClick={goNext} className="min-w-[48px] min-h-[48px] flex items-center justify-center hover:bg-white/10 rounded transition-colors" title={nextSong.title}>
+            <button onClick={goNext} className="min-w-[48px] min-h-[48px] flex items-center justify-center hover:bg-slate-700 rounded transition-colors" title={nextSong.title}>
               <ChevronRight className="w-5 h-5" />
             </button>
           )}
@@ -306,13 +306,13 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
             <button
               onClick={handleSearchLyrics}
               disabled={searchingLyrics}
-              className="flex items-center gap-1.5 px-3 min-h-[48px] bg-white/10 hover:bg-white/20 disabled:bg-white/5 rounded text-sm transition-colors"
+              className="flex items-center gap-1.5 px-3 min-h-[48px] bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 rounded text-sm transition-colors"
             >
               <RefreshCw className={`w-4 h-4 ${searchingLyrics ? 'animate-spin' : ''}`} />
               <span className="hidden sm:inline">{searchingLyrics ? 'Searching…' : 'Find Lyrics'}</span>
             </button>
           )}
-          <button onClick={toggleFullscreen} className="min-w-[48px] min-h-[48px] flex items-center justify-center hover:bg-white/10 rounded transition-colors">
+          <button onClick={toggleFullscreen} className="min-w-[48px] min-h-[48px] flex items-center justify-center hover:bg-slate-700 rounded transition-colors">
             {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
           </button>
         </div>
@@ -322,14 +322,14 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
       <div className="flex-1 flex overflow-hidden min-h-0">
 
         {/* ── Left panel — cover art + controls ── */}
-        <div className={`flex-shrink-0 flex flex-col items-center justify-between py-4 px-5 w-[260px] lg:w-[300px] xl:w-[340px] border-r border-white/10 bg-black transition-all duration-300 ${controlsFade} ${imageFull ? 'hidden' : ''}`}>
+        <div className={`flex-shrink-0 flex flex-col items-center justify-between py-4 px-5 w-[260px] lg:w-[300px] xl:w-[340px] border-r border-slate-700 bg-slate-800 transition-all duration-300 ${controlsFade} ${imageFull ? 'hidden' : ''}`}>
 
           <div className="flex-1 flex items-center justify-center w-full min-h-0 py-2">
             {song.coverArtUrl ? (
-              <img src={song.coverArtUrl} alt={song.title} className="shadow-2xl object-cover max-h-full max-w-full aspect-square" />
+              <img src={song.coverArtUrl} alt={song.title} className="shadow-2xl object-cover max-h-full max-w-full aspect-square rounded-lg" />
             ) : (
-              <div className="w-32 h-32 bg-white/5 border border-white/10 flex items-center justify-center shadow-xl">
-                <span className="text-4xl opacity-20">♪</span>
+              <div className="w-32 h-32 bg-slate-700 border border-slate-600 flex items-center justify-center shadow-xl rounded-lg">
+                <span className="text-4xl opacity-30">♪</span>
               </div>
             )}
           </div>
@@ -337,8 +337,8 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
           <div className="w-full space-y-1 mt-2">
             <input type="range" min={0} max={duration || 0} value={currentTime}
               onChange={e => seek(Number(e.target.value))}
-              className="w-full h-1 bg-white/10 rounded-full appearance-none cursor-pointer accent-[#d4af37]" />
-            <div className="flex justify-between text-xs text-white/30 tabular-nums px-0.5">
+              className="w-full h-1.5 bg-slate-600 rounded-full appearance-none cursor-pointer accent-orange-500" />
+            <div className="flex justify-between text-xs text-slate-400 tabular-nums px-0.5">
               <span>{fmt(currentTime)}</span>
               <span>{fmt(duration)}</span>
             </div>
@@ -346,35 +346,35 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
 
           <div className="flex items-center justify-center gap-3 mt-3">
             <button onClick={() => prevSong && onSelectSong(prevSong)} disabled={!prevSong}
-              className="w-12 h-12 flex items-center justify-center hover:bg-white/10 rounded-full transition-colors disabled:opacity-20">
+              className="w-12 h-12 flex items-center justify-center hover:bg-slate-700 rounded-full transition-colors disabled:opacity-25">
               <SkipBack className="w-6 h-6" />
             </button>
             <button onClick={() => skip(-10)}
-              className="w-11 h-11 flex items-center justify-center hover:bg-white/10 rounded-full transition-colors text-xs font-bold text-white/50">
+              className="w-11 h-11 flex items-center justify-center hover:bg-slate-700 rounded-full transition-colors text-xs font-bold text-slate-300">
               −10s
             </button>
             <button onClick={togglePlay}
-              className="w-[72px] h-[72px] flex items-center justify-center bg-[#d4af37] hover:bg-[#c4a030] active:scale-95 transition-all shadow-lg shadow-yellow-900/30 rounded-full">
-              {isPlaying ? <Pause className="w-8 h-8 text-black" /> : <Play className="w-8 h-8 text-black ml-1" />}
+              className="w-[72px] h-[72px] flex items-center justify-center bg-orange-500 hover:bg-orange-600 active:scale-95 transition-all shadow-lg shadow-orange-900/40 rounded-full">
+              {isPlaying ? <Pause className="w-8 h-8 text-white" /> : <Play className="w-8 h-8 text-white ml-1" />}
             </button>
             <button onClick={() => skip(10)}
-              className="w-11 h-11 flex items-center justify-center hover:bg-white/10 rounded-full transition-colors text-xs font-bold text-white/50">
+              className="w-11 h-11 flex items-center justify-center hover:bg-slate-700 rounded-full transition-colors text-xs font-bold text-slate-300">
               +10s
             </button>
             <button onClick={goNext} disabled={!nextSong}
-              className="w-12 h-12 flex items-center justify-center hover:bg-white/10 rounded-full transition-colors disabled:opacity-20">
+              className="w-12 h-12 flex items-center justify-center hover:bg-slate-700 rounded-full transition-colors disabled:opacity-25">
               <SkipForward className="w-6 h-6" />
             </button>
           </div>
 
           <div className="flex items-center gap-2 mt-3 w-full">
             <button onClick={() => setMuted(m => !m)}
-              className="w-10 h-10 flex items-center justify-center text-white/40 hover:text-white transition-colors flex-shrink-0">
+              className="w-10 h-10 flex items-center justify-center text-slate-400 hover:text-white transition-colors flex-shrink-0">
               {muted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
             </button>
             <input type="range" min={0} max={1} step={0.01} value={muted ? 0 : volume}
               onChange={e => { setVolume(Number(e.target.value)); setMuted(false); }}
-              className="flex-1 h-1 bg-white/10 rounded-full appearance-none cursor-pointer accent-white" />
+              className="flex-1 h-1.5 bg-slate-600 rounded-full appearance-none cursor-pointer accent-white" />
           </div>
 
           <button
@@ -382,8 +382,8 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
             title={autoplay ? 'Autoplay on — click to turn off' : 'Autoplay off — click to turn on'}
             className={`mt-3 w-full flex items-center justify-center gap-2 px-3 py-2 rounded text-xs font-medium transition-all ${
               autoplay
-                ? 'bg-[#d4af37]/10 border border-[#d4af37]/30 text-[#d4af37] hover:bg-[#d4af37]/20'
-                : 'bg-white/5 border border-white/10 text-white/20 hover:text-white/40'
+                ? 'bg-orange-500/15 border border-orange-500/40 text-orange-400 hover:bg-orange-500/25'
+                : 'bg-slate-700 border border-slate-600 text-slate-500 hover:text-slate-300'
             }`}
           >
             <Repeat className="w-4 h-4" />
@@ -392,7 +392,7 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
         </div>
 
         {/* ── Centre panel — lyrics ── */}
-        <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
+        <div className="flex-1 min-w-0 flex flex-col overflow-hidden bg-slate-900">
 
           {/* Toggle bar */}
           {(hasLyrics && song.lyricsImageUrl || showingImage) && (
@@ -400,7 +400,7 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
               {hasLyrics && song.lyricsImageUrl && (
                 <button
                   onClick={() => setShowImageLyrics(v => !v)}
-                  className="text-xs px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded transition-colors text-white/50 hover:text-white"
+                  className="text-xs px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded transition-colors text-slate-300 hover:text-white"
                 >
                   {showImageLyrics ? '📝 Text' : '🖼 Image'}
                 </button>
@@ -409,7 +409,7 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
                 <button
                   onClick={() => setImageFull(v => !v)}
                   title={imageFull ? 'Exit wall-to-wall' : 'Wall-to-wall'}
-                  className="text-xs px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded transition-colors text-white/50 hover:text-white flex items-center gap-1.5"
+                  className="text-xs px-3 py-1.5 bg-slate-700 hover:bg-slate-600 rounded transition-colors text-slate-300 hover:text-white flex items-center gap-1.5"
                 >
                   {imageFull ? <Shrink className="w-3.5 h-3.5" /> : <Expand className="w-3.5 h-3.5" />}
                   <span className="hidden sm:inline">{imageFull ? 'Exit' : 'Fullscreen'}</span>
@@ -434,33 +434,32 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
           ) : song.lyricsImageUrl && imageLoadError ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center p-8">
               <span className="text-5xl opacity-20">🖼️</span>
-              <p className="text-white/30 text-sm">Lyrics image unavailable</p>
-              <p className="text-white/20 text-xs">Re-upload via the song library</p>
+              <p className="text-slate-400 text-sm">Lyrics image unavailable</p>
+              <p className="text-slate-500 text-xs">Re-upload via the song library</p>
             </div>
           ) : hasLyrics ? (
-            // Text lyrics
             <div ref={lyricsContainerRef}
               className="flex-1 overflow-y-auto py-16 px-6 flex flex-col items-center gap-5"
               style={{ scrollbarWidth: 'none' }}
               onClick={togglePlay}
             >
               {lyricsLines.map((line, i) => {
-                const offset       = i - currentLineIdx;
-                const isActive     = offset === 0;
-                const isNext       = offset === 1;
-                const isNear       = offset === 2 || offset === 3;
-                const isPast       = offset < 0 && offset >= -3;
-                const isFar        = offset > 3 || offset < -3;
+                const offset   = i - currentLineIdx;
+                const isActive = offset === 0;
+                const isNext   = offset === 1;
+                const isNear   = offset === 2 || offset === 3;
+                const isPast   = offset < 0 && offset >= -3;
+                const isFar    = offset > 3 || offset < -3;
                 return (
                   <p key={i}
                     ref={el => { lineRefs.current[i] = el; }}
                     className={`text-center leading-tight transition-all duration-300 ${
                       isFar    ? 'hidden' :
                       isActive ? 'text-5xl sm:text-6xl xl:text-8xl font-bold text-white scale-[1.02]' :
-                      isNext   ? 'text-2xl xl:text-3xl text-white/40' :
-                      isNear   ? 'text-lg text-white/20' :
-                      isPast   ? 'text-sm text-white/10' :
-                      'text-base text-white/10'
+                      isNext   ? 'text-2xl xl:text-3xl text-slate-300' :
+                      isNear   ? 'text-lg text-slate-500' :
+                      isPast   ? 'text-sm text-slate-600' :
+                      'text-base text-slate-600'
                     }`}
                   >
                     {line || ' '}
@@ -471,9 +470,9 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8">
               <span className="text-7xl opacity-10">🎤</span>
-              <p className="text-white/30 text-2xl">No lyrics available</p>
+              <p className="text-slate-400 text-2xl">No lyrics available</p>
               <button onClick={handleSearchLyrics} disabled={searchingLyrics}
-                className="flex items-center gap-2 px-8 py-4 min-h-[56px] bg-white/10 hover:bg-white/20 disabled:bg-white/5 rounded text-lg transition-colors">
+                className="flex items-center gap-2 px-8 py-4 min-h-[56px] bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 rounded text-lg transition-colors">
                 <RefreshCw className={`w-5 h-5 ${searchingLyrics ? 'animate-spin' : ''}`} />
                 {searchingLyrics ? 'Searching online…' : 'Search for Lyrics'}
               </button>
@@ -482,20 +481,20 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
         </div>
 
         {/* ── Right panel — Up Next + All Songs ── */}
-        <div className={`flex-shrink-0 w-[200px] lg:w-[220px] xl:w-[240px] border-l border-white/10 bg-black flex flex-col overflow-hidden transition-all duration-300 ${imageFull ? 'hidden' : ''}`}>
+        <div className={`flex-shrink-0 w-[200px] lg:w-[220px] xl:w-[240px] border-l border-slate-700 bg-slate-800 flex flex-col overflow-hidden transition-all duration-300 ${imageFull ? 'hidden' : ''}`}>
 
           {/* Up Next */}
-          <div className="flex-shrink-0 border-b border-white/10 flex flex-col" style={{ maxHeight: '45%' }}>
+          <div className="flex-shrink-0 border-b border-slate-700 flex flex-col" style={{ maxHeight: '45%' }}>
             <div className="flex items-center gap-2 px-3 py-2 flex-shrink-0">
-              <ListMusic className="w-4 h-4 text-[#d4af37] flex-shrink-0" />
-              <span className="text-xs font-semibold text-white/50 uppercase tracking-wide">Up Next</span>
+              <ListMusic className="w-4 h-4 text-orange-400 flex-shrink-0" />
+              <span className="text-xs font-semibold text-slate-300 uppercase tracking-wide">Up Next</span>
               {queue.length > 0 && (
-                <span className="ml-auto text-xs px-1.5 py-0.5 bg-[#d4af37]/20 text-[#d4af37] rounded-full">{queue.length}</span>
+                <span className="ml-auto text-xs px-1.5 py-0.5 bg-orange-500/20 text-orange-400 rounded-full">{queue.length}</span>
               )}
             </div>
             <div className="overflow-y-auto flex-1" style={{ scrollbarWidth: 'none' }}>
               {upNext.length === 0 ? (
-                <p className="text-xs text-white/20 px-3 pb-3">No songs queued</p>
+                <p className="text-xs text-slate-500 px-3 pb-3">No songs queued</p>
               ) : (
                 upNext.map(({ song: s, queued }, i) => (
                   <div key={s.id}
@@ -505,19 +504,19 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
                     onDrop={e => handleDrop(e, i)}
                     onDragEnd={handleDragEnd}
                     className={`flex items-center gap-2 px-3 py-2 cursor-pointer group transition-colors relative
-                      ${dragIdx === i ? 'opacity-30' : 'hover:bg-white/5'}
-                      ${dragOver === i && dragIdx !== i ? 'border-t-2 border-[#d4af37]' : ''}
+                      ${dragIdx === i ? 'opacity-30' : 'hover:bg-slate-700/50'}
+                      ${dragOver === i && dragIdx !== i ? 'border-t-2 border-orange-500' : ''}
                     `}
                     onClick={() => dragIdx === null && onSelectSong(s)}
                   >
-                    <GripVertical className="w-4 h-4 text-white/20 cursor-grab flex-shrink-0 active:cursor-grabbing hover:text-white/50" />
+                    <GripVertical className="w-4 h-4 text-slate-500 cursor-grab flex-shrink-0 active:cursor-grabbing hover:text-slate-300" />
                     {s.coverArtUrl
-                      ? <img src={s.coverArtUrl} alt="" className="w-8 h-8 object-cover flex-shrink-0" />
-                      : <div className="w-8 h-8 bg-white/10 flex items-center justify-center flex-shrink-0 text-xs">♪</div>
+                      ? <img src={s.coverArtUrl} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0" />
+                      : <div className="w-8 h-8 rounded bg-slate-600 flex items-center justify-center flex-shrink-0 text-xs">♪</div>
                     }
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium truncate">{s.title}</p>
-                      <p className="text-xs text-white/30 truncate">{s.artist}</p>
+                      <p className="text-xs text-slate-400 truncate">{s.artist}</p>
                     </div>
                     {queued ? (
                       <button onClick={e => { e.stopPropagation(); removeFromQueue(s.id); }}
@@ -525,7 +524,7 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
                         <X className="w-3 h-3" />
                       </button>
                     ) : (
-                      <div className="w-1.5 h-1.5 rounded-full bg-white/20 flex-shrink-0" />
+                      <div className="w-1.5 h-1.5 rounded-full bg-slate-600 flex-shrink-0" />
                     )}
                   </div>
                 ))
@@ -535,29 +534,29 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
 
           {/* All Songs — DJ queue panel */}
           <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-            <div className="flex items-center gap-2 px-3 py-2 flex-shrink-0 border-b border-white/5">
-              <span className="text-xs font-semibold text-white/50 uppercase tracking-wide">All Songs</span>
-              <span className="ml-auto text-xs text-white/20">{otherSongs.length}</span>
+            <div className="flex items-center gap-2 px-3 py-2 flex-shrink-0 border-b border-slate-700/50">
+              <span className="text-xs font-semibold text-slate-300 uppercase tracking-wide">All Songs</span>
+              <span className="ml-auto text-xs text-slate-500">{otherSongs.length}</span>
             </div>
             <div className="overflow-y-auto flex-1" style={{ scrollbarWidth: 'none' }}>
               {otherSongs.map(s => {
                 const isQueued = queue.some(q => q.id === s.id);
                 return (
                   <div key={s.id}
-                    className={`flex items-center gap-2 px-3 py-2 cursor-pointer group transition-colors ${isQueued ? 'bg-[#d4af37]/10' : 'hover:bg-white/5'}`}
+                    className={`flex items-center gap-2 px-3 py-2 cursor-pointer group transition-colors ${isQueued ? 'bg-orange-500/10' : 'hover:bg-slate-700/50'}`}
                     onClick={() => addToQueue(s)}
                   >
                     {s.coverArtUrl
-                      ? <img src={s.coverArtUrl} alt="" className="w-8 h-8 object-cover flex-shrink-0" />
-                      : <div className="w-8 h-8 bg-white/10 flex items-center justify-center flex-shrink-0 text-xs">♪</div>
+                      ? <img src={s.coverArtUrl} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0" />
+                      : <div className="w-8 h-8 rounded bg-slate-600 flex items-center justify-center flex-shrink-0 text-xs">♪</div>
                     }
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium truncate">{s.title}</p>
-                      <p className="text-xs text-white/30 truncate">{s.artist}</p>
+                      <p className="text-xs text-slate-400 truncate">{s.artist}</p>
                     </div>
                     {isQueued
-                      ? <span className="text-xs text-[#d4af37] flex-shrink-0">✓</span>
-                      : <span className="text-xs text-white/20 opacity-0 group-hover:opacity-100 flex-shrink-0">+</span>
+                      ? <span className="text-xs text-orange-400 flex-shrink-0">✓</span>
+                      : <span className="text-xs text-slate-500 opacity-0 group-hover:opacity-100 flex-shrink-0">+</span>
                     }
                   </div>
                 );

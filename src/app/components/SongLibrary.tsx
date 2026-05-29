@@ -25,17 +25,17 @@ interface SongLibraryProps {
 }
 
 const lyricsBadge = (song: Song) => {
-  if (song.syncedLyrics.length > 0) return { label: 'Synced', cls: 'bg-[#00d4ff]/10 text-[#00d4ff] border border-[#00d4ff]/20' };
-  if (song.lyrics.trim())           return { label: 'Lyrics', cls: 'bg-white/5 text-white/50 border border-white/10' };
-  if (song.lyricsImageUrl)          return { label: 'Image',  cls: 'bg-[#d4af37]/10 text-[#d4af37] border border-[#d4af37]/20' };
-  return { label: 'No lyrics', cls: 'bg-white/5 text-white/20 border border-white/10' };
+  if (song.syncedLyrics.length > 0) return { label: 'Synced', cls: 'bg-blue-500/15 text-blue-400 border border-blue-500/30' };
+  if (song.lyrics.trim())           return { label: 'Lyrics', cls: 'bg-slate-700/60 text-slate-300 border border-slate-600' };
+  if (song.lyricsImageUrl)          return { label: 'Image',  cls: 'bg-orange-500/15 text-orange-400 border border-orange-500/30' };
+  return { label: 'No lyrics', cls: 'bg-slate-800 text-slate-500 border border-slate-700' };
 };
 
 export function SongLibrary({
   songs, canEdit, queue, onSelectSong, onQueueSong, onDeleteSong, onEditSong,
   onTogglePlaylist, onSearchLyrics, onClearLibrary, onUpdateLyrics, onAssignLyricsImage,
 }: SongLibraryProps) {
-  const [query, setQuery]             = useState('');
+  const [query, setQuery]           = useState('');
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [searchingLyrics, setSearchingLyrics]   = useState(false);
   const [searchProgress, setSearchProgress]     = useState<{ done: number; total: number } | null>(null);
@@ -132,29 +132,29 @@ export function SongLibrary({
   const selectedCount = Array.from(selectedIds).filter(id => filtered.some(s => s.id === id)).length;
 
   return (
-    <div className="flex-1 overflow-hidden flex flex-col p-4 gap-3 bg-black">
+    <div className="flex-1 overflow-hidden flex flex-col p-4 gap-3 bg-slate-900">
 
       {/* ── Search + bulk action bar ── */}
       <div className="flex gap-2 flex-wrap items-center">
         <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20 pointer-events-none" />
+          <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
           <input
             type="text"
             placeholder="Search songs, artists, track numbers…"
             value={query}
             onChange={e => setQuery(e.target.value)}
-            className="w-full pl-11 pr-4 py-3 bg-black border border-white/10 rounded text-white placeholder-white/20 focus:outline-none focus:border-[#d4af37]/40 transition-colors text-sm"
+            className="w-full pl-11 pr-4 py-3 bg-slate-800 border border-slate-700 rounded text-white placeholder-slate-500 focus:outline-none focus:border-orange-500/50 transition-colors text-sm"
           />
           {query && (
             <button
               onClick={() => setQuery('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-white/20 hover:text-white text-lg leading-none"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-white text-lg leading-none"
             >×</button>
           )}
         </div>
 
         {query && filtered.length > 0 && (
-          <span className="text-xs text-white/20 font-mono hidden sm:block">
+          <span className="text-xs text-slate-500 font-mono hidden sm:block">
             {filtered.length} found
           </span>
         )}
@@ -162,13 +162,13 @@ export function SongLibrary({
         {canEdit && (
           <button
             onClick={toggleSelectAll}
-            className="flex items-center gap-2 px-4 py-3 bg-black border border-white/10 hover:border-white/20 rounded text-sm transition-colors"
+            className="flex items-center gap-2 px-4 py-3 bg-slate-800 border border-slate-700 hover:border-slate-600 rounded text-sm transition-colors"
           >
             {allFilteredSelected
-              ? <CheckSquare className="w-4 h-4 text-[#d4af37]" />
-              : <Square className="w-4 h-4 text-white/30" />
+              ? <CheckSquare className="w-4 h-4 text-orange-500" />
+              : <Square className="w-4 h-4 text-slate-500" />
             }
-            <span className="text-white/40 hidden sm:inline">
+            <span className="text-slate-400 hidden sm:inline">
               {allFilteredSelected ? 'Deselect All' : 'Select All'}
             </span>
           </button>
@@ -178,7 +178,7 @@ export function SongLibrary({
           <button
             onClick={handleBulkSearchLyrics}
             disabled={searchingLyrics}
-            className="flex items-center gap-2 px-4 py-3 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-white/20 disabled:opacity-40 rounded text-sm text-white/60 transition-colors"
+            className="flex items-center gap-2 px-4 py-3 bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/30 hover:border-orange-500/50 disabled:opacity-40 rounded text-sm text-orange-400 transition-colors"
           >
             {searchingLyrics ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
             <span>
@@ -196,12 +196,12 @@ export function SongLibrary({
               <AlertTriangle className="w-4 h-4 text-red-400 flex-shrink-0" />
               <span className="text-red-300 hidden sm:inline">Delete all {songs.length} songs?</span>
               <button onClick={handleClearLibrary} className="px-2 py-0.5 bg-red-500 hover:bg-red-600 rounded text-white text-xs font-medium">Yes</button>
-              <button onClick={() => setConfirmClear(false)} className="px-2 py-0.5 bg-white/10 hover:bg-white/20 rounded text-white text-xs">No</button>
+              <button onClick={() => setConfirmClear(false)} className="px-2 py-0.5 bg-slate-700 hover:bg-slate-600 rounded text-white text-xs">No</button>
             </div>
           ) : (
             <button
               onClick={() => setConfirmClear(true)}
-              className="flex items-center gap-2 px-4 py-3 bg-black border border-white/10 hover:border-red-500/40 hover:text-red-400 rounded text-sm text-white/20 transition-colors"
+              className="flex items-center gap-2 px-4 py-3 bg-slate-800 border border-slate-700 hover:border-red-500/40 hover:text-red-400 rounded text-sm text-slate-500 transition-colors"
             >
               <Trash2 className="w-4 h-4" />
               <span className="hidden sm:inline">Clear</span>
@@ -213,22 +213,22 @@ export function SongLibrary({
       {/* ── Song grid ── */}
       <div className="flex-1 overflow-y-auto">
         {filtered.length === 0 ? (
-          <div className="h-full flex flex-col items-center justify-center gap-4 text-white/20">
-            <Music2 className="w-16 h-16 opacity-20" />
-            <p className="text-lg font-light tracking-wide text-white/30">
+          <div className="h-full flex flex-col items-center justify-center gap-4">
+            <Music2 className="w-16 h-16 text-slate-700" />
+            <p className="text-lg font-light tracking-wide text-slate-500">
               {songs.length === 0
                 ? 'No songs yet — sign in and upload to start'
                 : query ? `No matches for "${query}"` : 'No results'
               }
             </p>
             {query && (
-              <button onClick={() => setQuery('')} className="text-sm text-[#d4af37]/70 hover:text-[#d4af37]">
+              <button onClick={() => setQuery('')} className="text-sm text-orange-400/70 hover:text-orange-400">
                 Clear search
               </button>
             )}
           </div>
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-px pb-4 bg-white/5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 pb-4">
             {filtered.map(song => {
               const badge      = lyricsBadge(song);
               const isSelected = selectedIds.has(song.id);
@@ -240,16 +240,16 @@ export function SongLibrary({
               return (
                 <div
                   key={song.id}
-                  className={`bg-black transition-all group cursor-pointer relative overflow-hidden ${
+                  className={`bg-slate-800 border rounded-xl transition-all group cursor-pointer relative overflow-hidden ${
                     justQueued
-                      ? 'outline outline-2 outline-[#d4af37]'
+                      ? 'border-orange-500 shadow-[0_0_20px_rgba(249,115,22,0.2)]'
                       : isSelected
-                      ? 'outline outline-2 outline-[#d4af37]/60'
+                      ? 'border-orange-500/60 shadow-[0_0_20px_rgba(249,115,22,0.1)]'
                       : isQueued && !canEdit
-                      ? 'outline outline-1 outline-[#d4af37]/30'
+                      ? 'border-orange-500/30'
                       : inPlaylist
-                      ? 'hover:outline hover:outline-1 hover:outline-white/20'
-                      : 'opacity-50 hover:opacity-70'
+                      ? 'border-slate-700 hover:border-slate-500 hover:shadow-[0_0_16px_rgba(255,255,255,0.05)]'
+                      : 'border-slate-700/50 opacity-50 hover:opacity-70'
                   }`}
                   onClick={() => handleCardClick(song)}
                 >
@@ -259,13 +259,13 @@ export function SongLibrary({
                       className="absolute top-2 left-2 z-10 p-1"
                     >
                       {isSelected
-                        ? <CheckSquare className="w-4 h-4 text-[#d4af37]" />
-                        : <Square className="w-4 h-4 text-white/30 opacity-0 group-hover:opacity-100 transition-opacity" />
+                        ? <CheckSquare className="w-4 h-4 text-orange-500" />
+                        : <Square className="w-4 h-4 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
                       }
                     </button>
                   )}
 
-                  <div className="relative h-48 bg-black flex items-center justify-center overflow-hidden">
+                  <div className="relative h-48 bg-slate-900 flex items-center justify-center overflow-hidden">
                     {song.coverArtUrl
                       ? <img src={song.coverArtUrl} alt={song.title} className="w-full h-full object-cover" />
                       : song.lyricsImageUrl
@@ -274,32 +274,32 @@ export function SongLibrary({
                     }
 
                     <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                      <div className={`w-12 h-12 flex items-center justify-center shadow-lg ${
-                        canEdit ? 'bg-white' : 'bg-[#d4af37]'
+                      <div className={`w-12 h-12 rounded-full flex items-center justify-center shadow-lg ${
+                        canEdit ? 'bg-white' : 'bg-orange-500'
                       }`}>
                         {canEdit
-                          ? <Play className="w-5 h-5 text-black ml-0.5" />
+                          ? <Play className="w-5 h-5 text-slate-900 ml-0.5" />
                           : isQueued
-                          ? <span className="text-black text-xs font-bold">✓</span>
-                          : <Plus className="w-5 h-5 text-black" />
+                          ? <span className="text-white text-sm font-bold">✓</span>
+                          : <Plus className="w-5 h-5 text-white" />
                         }
                       </div>
                     </div>
 
-                    <span className={`absolute bottom-2 left-2 text-[10px] px-2 py-0.5 font-medium ${badge.cls}`}>
+                    <span className={`absolute bottom-2 left-2 text-[10px] px-2 py-0.5 rounded-full font-medium ${badge.cls}`}>
                       {badge.label}
                     </span>
 
                     {/* Patron queue indicator */}
                     {!canEdit && isQueued && (
-                      <span className="absolute bottom-2 right-2 text-[10px] px-2 py-0.5 bg-[#d4af37]/20 text-[#d4af37] border border-[#d4af37]/40 font-medium">
+                      <span className="absolute bottom-2 right-2 text-[10px] px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/40 font-medium">
                         Queued
                       </span>
                     )}
 
                     {/* Off-playlist indicator (editor view) */}
                     {canEdit && !inPlaylist && (
-                      <span className="absolute bottom-2 right-2 text-[10px] px-2 py-0.5 bg-black text-white/20 border border-white/10">
+                      <span className="absolute bottom-2 right-2 text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-500 border border-slate-700">
                         off
                       </span>
                     )}
@@ -308,49 +308,49 @@ export function SongLibrary({
                       <div className="absolute top-2 right-2 flex gap-1 opacity-0 group-hover:opacity-100 transition-all">
                         <button
                           onClick={e => { e.stopPropagation(); onEditSong(song); }}
-                          className="p-1.5 bg-black/80 hover:bg-white/10 border border-transparent hover:border-white/20 rounded transition-colors"
+                          className="p-1.5 bg-black/80 hover:bg-blue-500/20 border border-transparent hover:border-blue-500/40 rounded-lg transition-colors"
                           title="Edit song info"
                         >
-                          <Pencil className="w-3.5 h-3.5 text-white/40 hover:text-white" />
+                          <Pencil className="w-3.5 h-3.5 text-slate-400 hover:text-blue-400" />
                         </button>
                         <button
                           onClick={e => { e.stopPropagation(); handleTogglePlaylist(song.id); }}
                           disabled={isBusy}
-                          className={`p-1.5 rounded transition-colors border ${inPlaylist ? 'bg-black/80 hover:bg-white/10 border-transparent hover:border-white/20' : 'bg-[#d4af37]/20 border-[#d4af37]/40 hover:bg-[#d4af37]/30'}`}
+                          className={`p-1.5 rounded-lg transition-colors border ${inPlaylist ? 'bg-black/80 hover:bg-orange-500/20 border-transparent hover:border-orange-500/40' : 'bg-orange-500/20 border-orange-500/40 hover:bg-orange-500/30'}`}
                           title={inPlaylist ? 'Remove from playlist' : 'Add to playlist'}
                         >
                           {isBusy
                             ? <Loader2 className="w-3.5 h-3.5 text-white animate-spin" />
                             : inPlaylist
-                            ? <ListX className="w-3.5 h-3.5 text-white/40" />
-                            : <ListMusic className="w-3.5 h-3.5 text-[#d4af37]" />
+                            ? <ListX className="w-3.5 h-3.5 text-slate-300" />
+                            : <ListMusic className="w-3.5 h-3.5 text-orange-400" />
                           }
                         </button>
                         <button
                           onClick={e => { e.stopPropagation(); handleDeleteSong(song.id); }}
                           disabled={isBusy}
-                          className="p-1.5 bg-black/80 hover:bg-red-500/20 border border-transparent hover:border-red-500/40 rounded transition-colors"
+                          className="p-1.5 bg-black/80 hover:bg-red-500/20 border border-transparent hover:border-red-500/40 rounded-lg transition-colors"
                           title="Delete song"
                         >
                           {isBusy
-                            ? <Loader2 className="w-3.5 h-3.5 animate-spin text-white/40" />
-                            : <Trash2 className="w-3.5 h-3.5 text-white/40" />
+                            ? <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-400" />
+                            : <Trash2 className="w-3.5 h-3.5 text-slate-400" />
                           }
                         </button>
                       </div>
                     )}
                   </div>
 
-                  <div className="p-3 bg-black">
+                  <div className="p-3">
                     <h3 className="font-semibold truncate text-sm text-white">
                       {song.trackNumber && (
-                        <span className="font-mono text-[#d4af37]/50 mr-1.5 text-xs">{song.trackNumber}</span>
+                        <span className="font-mono text-orange-400/60 mr-1.5 text-xs">{song.trackNumber}</span>
                       )}
                       {song.title}
                     </h3>
-                    <p className="text-xs text-white/30 truncate mt-0.5">{song.artist}</p>
+                    <p className="text-xs text-slate-400 truncate mt-0.5">{song.artist}</p>
                     {justQueued && (
-                      <p className="text-xs text-[#d4af37] mt-1 font-medium">Added to queue</p>
+                      <p className="text-xs text-orange-400 mt-1 font-medium">Added to queue ✓</p>
                     )}
                   </div>
                 </div>
