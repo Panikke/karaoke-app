@@ -1,8 +1,8 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   ArrowLeft, Play, Pause, SkipBack, SkipForward,
   Volume2, VolumeX, Maximize, Minimize, RefreshCw,
-  ChevronLeft, ChevronRight, ListMusic, X, Repeat, GripVertical,
+  ChevronLeft, ChevronRight, ListMusic, X, Repeat, GripVertical, Expand, Shrink,
 } from 'lucide-react';
 import type { Song } from '../App';
 import { getCurrentLineIndex } from '../../utils/lrcParser';
@@ -11,64 +11,76 @@ import { searchLyrics } from '../../utils/lyricsApi';
 interface KaraokePlayerProps {
   song: Song;
   playlist: Song[];
+  queue: Song[];
+  onQueueChange: React.Dispatch<React.SetStateAction<Song[]>>;
   onBack: () => void;
   onSelectSong: (song: Song) => void;
   onUpdateLyrics: (id: string, lyrics: string, synced: import('../../utils/lrcParser').LyricLine[], source: Song['lyricsSource']) => Promise<void>;
 }
 
-export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLyrics }: KaraokePlayerProps) {
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(1);
-  const [muted, setMuted] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
+export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, onSelectSong, onUpdateLyrics }: KaraokePlayerProps) {
+  const [isPlaying, setIsPlaying]           = useState(false);
+  const [currentTime, setCurrentTime]       = useState(0);
+  const [duration, setDuration]             = useState(0);
+  const [volume, setVolume]                 = useState(1);
+  const [muted, setMuted]                   = useState(false);
+  const [isFullscreen, setIsFullscreen]     = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
   const [searchingLyrics, setSearchingLyrics] = useState(false);
   const [showImageLyrics, setShowImageLyrics] = useState(false);
   const [imageLoadError, setImageLoadError] = useState(false);
-  const [queue, setQueue] = useState<Song[]>([]);
-  const [autoplay, setAutoplay] = useState(true);
-  const [dragIdx, setDragIdx] = useState<number | null>(null);
-  const [dragOver, setDragOver] = useState<number | null>(null);
+  const [imageFull, setImageFull]           = useState(false);
+  const [autoplay, setAutoplay]             = useState(true);
+  const [dragIdx, setDragIdx]               = useState<number | null>(null);
+  const [dragOver, setDragOver]             = useState<number | null>(null);
 
-  const audioRef = useRef<HTMLAudioElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const audioRef           = useRef<HTMLAudioElement>(null);
+  const containerRef       = useRef<HTMLDivElement>(null);
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
-  const lineRefs = useRef<(HTMLParagraphElement | null)[]>([]);
-  const wakeLockRef = useRef<WakeLockSentinel | null>(null);
-  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const queueRef = useRef<Song[]>([]);
-  const playlistRef = useRef<Song[]>([]);
-  const currentSongRef = useRef<Song>(song);
-  const autoplayRef = useRef(true);          // mirror of autoplay state for use in event listeners
-  const shouldAutoplayRef = useRef(false);   // set by onEnd to trigger play on next song load
+  const lineRefs           = useRef<(HTMLParagraphElement | null)[]>([]);
+  const wakeLockRef        = useRef<WakeLockSentinel | null>(null);
+  const hideTimerRef       = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const queueRef           = useRef<Song[]>([]);
+  const playlistRef        = useRef<Song[]>([]);
+  const currentSongRef     = useRef<Song>(song);
+  const autoplayRef        = useRef(true);
+  const shouldAutoplayRef  = useRef(false);
 
-  // Keep refs in sync for use inside event listeners
   useEffect(() => { queueRef.current = queue; }, [queue]);
   useEffect(() => { playlistRef.current = playlist; }, [playlist]);
   useEffect(() => { currentSongRef.current = song; }, [song]);
   useEffect(() => { autoplayRef.current = autoplay; }, [autoplay]);
 
-  const hasSynced = song.syncedLyrics.length > 0;
-  const hasPlain = song.lyrics.trim().length > 0;
-  const plainLines = hasPlain ? song.lyrics.split('\n').filter(l => l.trim()) : [];
+  const hasSynced   = song.syncedLyrics.length > 0;
+  const hasPlain    = song.lyrics.trim().length > 0;
+  const plainLines  = hasPlain ? song.lyrics.split('\n').filter(l => l.trim()) : [];
   const syncedLines = song.syncedLyrics;
+
+  // Proportional plain lyrics timing — each line weighted by character count
+  const plainLineCumulativeTimes = useMemo(() => {
+    if (!hasPlain || plainLines.length === 0 || duration === 0) return [];
+    const weights = plainLines.map(l => Math.max(l.trim().length, 8));
+    const total = weights.reduce((a, b) => a + b, 0);
+    const times: number[] = [];
+    let cum = 0;
+    for (const w of weights) { times.push(cum); cum += (w / total) * duration; }
+    return times;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [song.lyrics, duration]);
+
   const currentSyncedIdx = hasSynced ? getCurrentLineIndex(syncedLines, currentTime) : -1;
-  const currentPlainIdx = (!hasSynced && hasPlain && duration > 0)
-    ? Math.min(Math.floor((currentTime / duration) * plainLines.length), plainLines.length - 1)
+  const currentPlainIdx  = (!hasSynced && hasPlain && plainLineCumulativeTimes.length > 0)
+    ? plainLineCumulativeTimes.reduce((best, t, i) => t <= currentTime ? i : best, 0)
     : -1;
-  const currentLineIdx = hasSynced ? currentSyncedIdx : currentPlainIdx;
-  const lyricsLines = hasSynced ? syncedLines.map(l => l.text) : plainLines;
-  const hasLyrics = lyricsLines.length > 0;
+  const currentLineIdx  = hasSynced ? currentSyncedIdx : currentPlainIdx;
+  const lyricsLines     = hasSynced ? syncedLines.map(l => l.text) : plainLines;
+  const hasLyrics       = lyricsLines.length > 0;
 
-  const currentIdx = playlist.findIndex(s => s.id === song.id);
+  const currentIdx   = playlist.findIndex(s => s.id === song.id);
+  const prevSong     = currentIdx > 0 ? playlist[currentIdx - 1] : null;
   const sequentialNext = currentIdx < playlist.length - 1 ? playlist[currentIdx + 1] : null;
-  const prevSong = currentIdx > 0 ? playlist[currentIdx - 1] : null;
-  // Effective next: queue first, then sequential
-  const nextSong = queue.length > 0 ? queue[0] : sequentialNext;
+  const nextSong     = queue.length > 0 ? queue[0] : sequentialNext;
 
-  // "Up Next" panel: queue items + sequential remaining (deduplicated, capped at 20)
   const upNext: Array<{ song: Song; queued: boolean }> = [
     ...queue.map(s => ({ song: s, queued: true })),
     ...playlist
@@ -77,29 +89,29 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
       .map(s => ({ song: s, queued: false })),
   ].slice(0, 20);
 
-  // "All Songs" panel: everything except current song
   const otherSongs = playlist.filter(s => s.id !== song.id);
 
+  // DJ adds to FRONT (play next); patron library adds to END (FIFO)
   const addToQueue = useCallback((s: Song) => {
-    setQueue(prev => [s, ...prev.filter(q => q.id !== s.id)]);
-  }, []);
+    onQueueChange(prev => [s, ...prev.filter(q => q.id !== s.id)]);
+  }, [onQueueChange]);
 
   const removeFromQueue = useCallback((id: string) => {
-    setQueue(prev => prev.filter(q => q.id !== id));
-  }, []);
+    onQueueChange(prev => prev.filter(q => q.id !== id));
+  }, [onQueueChange]);
 
   const goNext = useCallback(() => {
     const q = queueRef.current;
     if (q.length > 0) {
       const next = q[0];
-      setQueue(prev => prev.slice(1));
+      onQueueChange(prev => prev.slice(1));
       onSelectSong(next);
     } else {
       const pl = playlistRef.current;
       const idx = pl.findIndex(s => s.id === currentSongRef.current.id);
       if (idx < pl.length - 1) onSelectSong(pl[idx + 1]);
     }
-  }, [onSelectSong]);
+  }, [onSelectSong, onQueueChange]);
 
   // Auto-scroll active lyric line
   useEffect(() => {
@@ -114,7 +126,7 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
     if (!audio) return;
     const onTime = () => setCurrentTime(audio.currentTime);
     const onMeta = () => setDuration(audio.duration);
-    const onEnd = () => {
+    const onEnd  = () => {
       setIsPlaying(false);
       const hasNext = queueRef.current.length > 0 ||
         playlistRef.current.findIndex(s => s.id === currentSongRef.current.id) < playlistRef.current.length - 1;
@@ -135,26 +147,23 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
     if (audioRef.current) audioRef.current.volume = muted ? 0 : volume;
   }, [volume, muted]);
 
-  // Reset on song change — and auto-start if flagged by onEnd
+  // Reset on song change
   useEffect(() => {
     setIsPlaying(false);
     setCurrentTime(0);
     lineRefs.current = [];
-    // If the song has a lyrics image, show it by default; otherwise use text
     setShowImageLyrics(!!song.lyricsImageUrl);
     setImageLoadError(false);
+    setImageFull(false);
 
     if (shouldAutoplayRef.current) {
       shouldAutoplayRef.current = false;
       const audio = audioRef.current;
       if (!audio) return;
       const startPlay = () => {
-        audio.play()
-          .then(() => setIsPlaying(true))
-          .catch(() => {}); // browser may block autoplay without interaction
+        audio.play().then(() => setIsPlaying(true)).catch(() => {});
         audio.removeEventListener('canplay', startPlay);
       };
-      // If audio is already ready (cached), play immediately; otherwise wait
       if (audio.readyState >= 3) startPlay();
       else audio.addEventListener('canplay', startPlay);
     }
@@ -189,10 +198,10 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
       artist: song.artist,
       artwork: song.coverArtUrl ? [{ src: song.coverArtUrl, sizes: '512x512', type: 'image/png' }] : [],
     });
-    navigator.mediaSession.setActionHandler('play', () => { audioRef.current?.play(); setIsPlaying(true); });
-    navigator.mediaSession.setActionHandler('pause', () => { audioRef.current?.pause(); setIsPlaying(false); });
+    navigator.mediaSession.setActionHandler('play',          () => { audioRef.current?.play(); setIsPlaying(true); });
+    navigator.mediaSession.setActionHandler('pause',         () => { audioRef.current?.pause(); setIsPlaying(false); });
     navigator.mediaSession.setActionHandler('previoustrack', prevSong ? () => onSelectSong(prevSong) : null);
-    navigator.mediaSession.setActionHandler('nexttrack', nextSong ? goNext : null);
+    navigator.mediaSession.setActionHandler('nexttrack',     nextSong ? goNext : null);
   }, [song, prevSong, nextSong, goNext, onSelectSong]);
 
   // Auto-hide controls in fullscreen
@@ -218,21 +227,12 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
     const audio = audioRef.current;
     if (!audio) return;
     if (isPlaying) { audio.pause(); setIsPlaying(false); }
-    else { audio.play(); setIsPlaying(true); }
+    else           { audio.play();  setIsPlaying(true);  }
   }, [isPlaying]);
 
-  const seek = (v: number) => {
-    if (audioRef.current) { audioRef.current.currentTime = v; setCurrentTime(v); }
-  };
-
-  const skip = (s: number) => {
-    if (audioRef.current) audioRef.current.currentTime = Math.max(0, Math.min(duration, currentTime + s));
-  };
-
-  const fmt = (t: number) => {
-    if (!isFinite(t)) return '0:00';
-    return `${Math.floor(t / 60)}:${Math.floor(t % 60).toString().padStart(2, '0')}`;
-  };
+  const seek  = (v: number) => { if (audioRef.current) { audioRef.current.currentTime = v; setCurrentTime(v); } };
+  const skip  = (s: number) => { if (audioRef.current) audioRef.current.currentTime = Math.max(0, Math.min(duration, currentTime + s)); };
+  const fmt   = (t: number) => !isFinite(t) ? '0:00' : `${Math.floor(t / 60)}:${Math.floor(t % 60).toString().padStart(2, '0')}`;
 
   const toggleFullscreen = () => {
     if (!document.fullscreenElement) containerRef.current?.requestFullscreen();
@@ -250,21 +250,22 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
   }, [song.id, song.title, song.artist, onUpdateLyrics]);
 
   const handleDragStart = (idx: number) => setDragIdx(idx);
-  const handleDragOver = (e: React.DragEvent, idx: number) => { e.preventDefault(); setDragOver(idx); };
-  const handleDrop = (e: React.DragEvent, toIdx: number) => {
+  const handleDragOver  = (e: React.DragEvent, idx: number) => { e.preventDefault(); setDragOver(idx); };
+  const handleDrop      = (e: React.DragEvent, toIdx: number) => {
     e.preventDefault();
     if (dragIdx !== null && dragIdx !== toIdx) {
       const reordered = [...upNext];
       const [item] = reordered.splice(dragIdx, 1);
       reordered.splice(toIdx, 0, item);
-      setQueue(reordered.map(({ song: s }) => s));
+      onQueueChange(reordered.map(({ song: s }) => s));
     }
     setDragIdx(null);
     setDragOver(null);
   };
   const handleDragEnd = () => { setDragIdx(null); setDragOver(null); };
 
-  const controlsFade = isFullscreen && !controlsVisible ? 'opacity-0 pointer-events-none' : 'opacity-100';
+  const controlsFade   = isFullscreen && !controlsVisible ? 'opacity-0 pointer-events-none' : 'opacity-100';
+  const showingImage   = (showImageLyrics || !hasLyrics) && !!song.lyricsImageUrl && !imageLoadError;
 
   return (
     <div
@@ -276,10 +277,10 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
       <audio ref={audioRef} src={song.audioUrl} />
 
       {/* ── Header ── */}
-      <header className={`flex-shrink-0 bg-[#0a0a0a] border-b border-[#1a1a1a] px-3 py-2 flex items-center gap-2 transition-opacity duration-300 ${controlsFade}`}>
+      <header className={`flex-shrink-0 bg-black border-b border-white/10 px-3 py-2 flex items-center gap-2 transition-opacity duration-300 ${controlsFade}`}>
         <button
           onClick={onBack}
-          className="flex items-center gap-1.5 text-gray-300 hover:text-white min-w-[48px] min-h-[48px] px-3 rounded-lg hover:bg-white/10 transition-colors"
+          className="flex items-center gap-1.5 text-white/50 hover:text-white min-w-[48px] min-h-[48px] px-3 rounded hover:bg-white/10 transition-colors"
         >
           <ArrowLeft className="w-5 h-5 flex-shrink-0" />
           <span className="text-sm hidden sm:inline">Library</span>
@@ -287,17 +288,17 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
 
         <div className="flex-1 text-center px-2 min-w-0">
           <p className="font-bold truncate leading-tight">{song.title}</p>
-          <p className="text-sm text-gray-400 truncate leading-tight">{song.artist}</p>
+          <p className="text-sm text-white/40 truncate leading-tight">{song.artist}</p>
         </div>
 
         <div className="flex items-center gap-1 flex-shrink-0">
           {prevSong && (
-            <button onClick={() => onSelectSong(prevSong)} className="min-w-[48px] min-h-[48px] flex items-center justify-center hover:bg-white/10 rounded-lg transition-colors" title={prevSong.title}>
+            <button onClick={() => onSelectSong(prevSong)} className="min-w-[48px] min-h-[48px] flex items-center justify-center hover:bg-white/10 rounded transition-colors" title={prevSong.title}>
               <ChevronLeft className="w-5 h-5" />
             </button>
           )}
           {nextSong && (
-            <button onClick={goNext} className="min-w-[48px] min-h-[48px] flex items-center justify-center hover:bg-white/10 rounded-lg transition-colors" title={nextSong.title}>
+            <button onClick={goNext} className="min-w-[48px] min-h-[48px] flex items-center justify-center hover:bg-white/10 rounded transition-colors" title={nextSong.title}>
               <ChevronRight className="w-5 h-5" />
             </button>
           )}
@@ -305,13 +306,13 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
             <button
               onClick={handleSearchLyrics}
               disabled={searchingLyrics}
-              className="flex items-center gap-1.5 px-3 min-h-[48px] bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 rounded-lg text-sm transition-colors"
+              className="flex items-center gap-1.5 px-3 min-h-[48px] bg-white/10 hover:bg-white/20 disabled:bg-white/5 rounded text-sm transition-colors"
             >
               <RefreshCw className={`w-4 h-4 ${searchingLyrics ? 'animate-spin' : ''}`} />
               <span className="hidden sm:inline">{searchingLyrics ? 'Searching…' : 'Find Lyrics'}</span>
             </button>
           )}
-          <button onClick={toggleFullscreen} className="min-w-[48px] min-h-[48px] flex items-center justify-center hover:bg-white/10 rounded-lg transition-colors">
+          <button onClick={toggleFullscreen} className="min-w-[48px] min-h-[48px] flex items-center justify-center hover:bg-white/10 rounded transition-colors">
             {isFullscreen ? <Minimize className="w-5 h-5" /> : <Maximize className="w-5 h-5" />}
           </button>
         </div>
@@ -321,13 +322,13 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
       <div className="flex-1 flex overflow-hidden min-h-0">
 
         {/* ── Left panel — cover art + controls ── */}
-        <div className={`flex-shrink-0 flex flex-col items-center justify-between py-4 px-5 w-[260px] lg:w-[300px] xl:w-[340px] border-r border-[#1a1a1a] bg-[#080808] transition-opacity duration-300 ${controlsFade}`}>
+        <div className={`flex-shrink-0 flex flex-col items-center justify-between py-4 px-5 w-[260px] lg:w-[300px] xl:w-[340px] border-r border-white/10 bg-black transition-all duration-300 ${controlsFade} ${imageFull ? 'hidden' : ''}`}>
 
           <div className="flex-1 flex items-center justify-center w-full min-h-0 py-2">
             {song.coverArtUrl ? (
-              <img src={song.coverArtUrl} alt={song.title} className="rounded-2xl shadow-2xl object-cover max-h-full max-w-full aspect-square" />
+              <img src={song.coverArtUrl} alt={song.title} className="shadow-2xl object-cover max-h-full max-w-full aspect-square" />
             ) : (
-              <div className="w-32 h-32 rounded-2xl bg-[#111] border border-[#222] flex items-center justify-center shadow-xl">
+              <div className="w-32 h-32 bg-white/5 border border-white/10 flex items-center justify-center shadow-xl">
                 <span className="text-4xl opacity-20">♪</span>
               </div>
             )}
@@ -336,8 +337,8 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
           <div className="w-full space-y-1 mt-2">
             <input type="range" min={0} max={duration || 0} value={currentTime}
               onChange={e => seek(Number(e.target.value))}
-              className="w-full h-2 bg-white/20 rounded-full appearance-none cursor-pointer accent-pink-500" />
-            <div className="flex justify-between text-xs text-gray-400 tabular-nums px-0.5">
+              className="w-full h-1 bg-white/10 rounded-full appearance-none cursor-pointer accent-[#d4af37]" />
+            <div className="flex justify-between text-xs text-white/30 tabular-nums px-0.5">
               <span>{fmt(currentTime)}</span>
               <span>{fmt(duration)}</span>
             </div>
@@ -345,45 +346,44 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
 
           <div className="flex items-center justify-center gap-3 mt-3">
             <button onClick={() => prevSong && onSelectSong(prevSong)} disabled={!prevSong}
-              className="w-12 h-12 flex items-center justify-center hover:bg-white/10 rounded-full transition-colors disabled:opacity-25">
+              className="w-12 h-12 flex items-center justify-center hover:bg-white/10 rounded-full transition-colors disabled:opacity-20">
               <SkipBack className="w-6 h-6" />
             </button>
             <button onClick={() => skip(-10)}
-              className="w-11 h-11 flex items-center justify-center hover:bg-white/10 rounded-full transition-colors text-xs font-bold text-gray-300">
+              className="w-11 h-11 flex items-center justify-center hover:bg-white/10 rounded-full transition-colors text-xs font-bold text-white/50">
               −10s
             </button>
             <button onClick={togglePlay}
-              className="w-[72px] h-[72px] flex items-center justify-center bg-gradient-to-br from-pink-500 to-purple-600 rounded-full hover:from-pink-400 hover:to-purple-500 active:scale-95 transition-all shadow-lg shadow-purple-900/50">
-              {isPlaying ? <Pause className="w-8 h-8" /> : <Play className="w-8 h-8 ml-1" />}
+              className="w-[72px] h-[72px] flex items-center justify-center bg-[#d4af37] hover:bg-[#c4a030] active:scale-95 transition-all shadow-lg shadow-yellow-900/30 rounded-full">
+              {isPlaying ? <Pause className="w-8 h-8 text-black" /> : <Play className="w-8 h-8 text-black ml-1" />}
             </button>
             <button onClick={() => skip(10)}
-              className="w-11 h-11 flex items-center justify-center hover:bg-white/10 rounded-full transition-colors text-xs font-bold text-gray-300">
+              className="w-11 h-11 flex items-center justify-center hover:bg-white/10 rounded-full transition-colors text-xs font-bold text-white/50">
               +10s
             </button>
             <button onClick={goNext} disabled={!nextSong}
-              className="w-12 h-12 flex items-center justify-center hover:bg-white/10 rounded-full transition-colors disabled:opacity-25">
+              className="w-12 h-12 flex items-center justify-center hover:bg-white/10 rounded-full transition-colors disabled:opacity-20">
               <SkipForward className="w-6 h-6" />
             </button>
           </div>
 
           <div className="flex items-center gap-2 mt-3 w-full">
             <button onClick={() => setMuted(m => !m)}
-              className="w-10 h-10 flex items-center justify-center text-gray-400 hover:text-white transition-colors flex-shrink-0">
+              className="w-10 h-10 flex items-center justify-center text-white/40 hover:text-white transition-colors flex-shrink-0">
               {muted ? <VolumeX className="w-5 h-5" /> : <Volume2 className="w-5 h-5" />}
             </button>
             <input type="range" min={0} max={1} step={0.01} value={muted ? 0 : volume}
               onChange={e => { setVolume(Number(e.target.value)); setMuted(false); }}
-              className="flex-1 h-2 bg-white/20 rounded-full appearance-none cursor-pointer accent-white" />
+              className="flex-1 h-1 bg-white/10 rounded-full appearance-none cursor-pointer accent-white" />
           </div>
 
-          {/* Autoplay toggle */}
           <button
             onClick={() => setAutoplay(a => !a)}
             title={autoplay ? 'Autoplay on — click to turn off' : 'Autoplay off — click to turn on'}
-            className={`mt-3 w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-xs font-medium transition-all ${
+            className={`mt-3 w-full flex items-center justify-center gap-2 px-3 py-2 rounded text-xs font-medium transition-all ${
               autoplay
-                ? 'bg-[#ff2d78]/10 border border-[#ff2d78]/30 text-[#ff2d78] hover:bg-[#ff2d78]/20'
-                : 'bg-[#111] border border-[#222] text-[#444] hover:text-[#888]'
+                ? 'bg-[#d4af37]/10 border border-[#d4af37]/30 text-[#d4af37] hover:bg-[#d4af37]/20'
+                : 'bg-white/5 border border-white/10 text-white/20 hover:text-white/40'
             }`}
           >
             <Repeat className="w-4 h-4" />
@@ -393,52 +393,76 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
 
         {/* ── Centre panel — lyrics ── */}
         <div className="flex-1 min-w-0 flex flex-col overflow-hidden">
-          {/* Text/Image toggle — shown only when both exist */}
-          {hasLyrics && song.lyricsImageUrl && (
-            <div className="flex-shrink-0 flex justify-end px-4 pt-2">
-              <button
-                onClick={() => setShowImageLyrics(v => !v)}
-                className="text-xs px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded-lg transition-colors text-gray-300"
-              >
-                {showImageLyrics ? '📝 Text lyrics' : '🖼 Image lyrics'}
-              </button>
-            </div>
-          )}
-          {/* Lyrics image — shown when: no text lyrics, OR user toggled to image */}
-          {(showImageLyrics || !hasLyrics) && song.lyricsImageUrl ? (
-            <div className="flex-1 overflow-y-auto flex items-center justify-center p-4">
-              {imageLoadError ? (
-                <div className="flex flex-col items-center gap-3 text-center">
-                  <span className="text-5xl opacity-20">🖼️</span>
-                  <p className="text-gray-500 text-sm">Lyrics image unavailable</p>
-                  <p className="text-gray-600 text-xs">Re-upload the image via the song library</p>
-                </div>
-              ) : (
-                <img
-                  src={song.lyricsImageUrl}
-                  alt="Lyrics"
-                  className="max-w-full max-h-full object-contain rounded-xl"
-                  onError={() => setImageLoadError(true)}
-                />
+
+          {/* Toggle bar */}
+          {(hasLyrics && song.lyricsImageUrl || showingImage) && (
+            <div className="flex-shrink-0 flex items-center justify-end gap-2 px-4 pt-2">
+              {hasLyrics && song.lyricsImageUrl && (
+                <button
+                  onClick={() => setShowImageLyrics(v => !v)}
+                  className="text-xs px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded transition-colors text-white/50 hover:text-white"
+                >
+                  {showImageLyrics ? '📝 Text' : '🖼 Image'}
+                </button>
+              )}
+              {showingImage && (
+                <button
+                  onClick={() => setImageFull(v => !v)}
+                  title={imageFull ? 'Exit wall-to-wall' : 'Wall-to-wall'}
+                  className="text-xs px-3 py-1.5 bg-white/10 hover:bg-white/20 rounded transition-colors text-white/50 hover:text-white flex items-center gap-1.5"
+                >
+                  {imageFull ? <Shrink className="w-3.5 h-3.5" /> : <Expand className="w-3.5 h-3.5" />}
+                  <span className="hidden sm:inline">{imageFull ? 'Exit' : 'Fullscreen'}</span>
+                </button>
               )}
             </div>
+          )}
+
+          {/* Lyrics image */}
+          {showingImage ? (
+            <div
+              className="flex-1 overflow-hidden flex items-center justify-center"
+              onClick={() => imageFull && setImageFull(false)}
+            >
+              <img
+                src={song.lyricsImageUrl!}
+                alt="Lyrics"
+                className="w-full h-full object-contain"
+                onError={() => setImageLoadError(true)}
+              />
+            </div>
+          ) : song.lyricsImageUrl && imageLoadError ? (
+            <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center p-8">
+              <span className="text-5xl opacity-20">🖼️</span>
+              <p className="text-white/30 text-sm">Lyrics image unavailable</p>
+              <p className="text-white/20 text-xs">Re-upload via the song library</p>
+            </div>
           ) : hasLyrics ? (
-            <div ref={lyricsContainerRef} className="flex-1 overflow-y-auto py-12 px-6 flex flex-col items-center gap-4"
-              style={{ scrollbarWidth: 'none' }} onClick={togglePlay}>
+            // Text lyrics
+            <div ref={lyricsContainerRef}
+              className="flex-1 overflow-y-auto py-16 px-6 flex flex-col items-center gap-5"
+              style={{ scrollbarWidth: 'none' }}
+              onClick={togglePlay}
+            >
               {lyricsLines.map((line, i) => {
-                const isActive = i === currentLineIdx;
-                const isPast = i < currentLineIdx;
-                const isNext = i === currentLineIdx + 1;
-                const isFar = i > currentLineIdx + 3 || i < currentLineIdx - 3;
+                const offset       = i - currentLineIdx;
+                const isActive     = offset === 0;
+                const isNext       = offset === 1;
+                const isNear       = offset === 2 || offset === 3;
+                const isPast       = offset < 0 && offset >= -3;
+                const isFar        = offset > 3 || offset < -3;
                 return (
-                  <p key={i} ref={el => { lineRefs.current[i] = el; }}
-                    className={`text-center leading-snug transition-all duration-300 ${
-                      isActive ? 'text-4xl xl:text-5xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-pink-400 via-fuchsia-300 to-cyan-400 scale-105'
-                        : isPast ? 'text-lg text-gray-700'
-                        : isNext ? 'text-2xl text-gray-300'
-                        : isFar ? 'text-base text-gray-600'
-                        : 'text-xl text-gray-500'
-                    }`}>
+                  <p key={i}
+                    ref={el => { lineRefs.current[i] = el; }}
+                    className={`text-center leading-tight transition-all duration-300 ${
+                      isFar    ? 'hidden' :
+                      isActive ? 'text-5xl sm:text-6xl xl:text-8xl font-bold text-white scale-[1.02]' :
+                      isNext   ? 'text-2xl xl:text-3xl text-white/40' :
+                      isNear   ? 'text-lg text-white/20' :
+                      isPast   ? 'text-sm text-white/10' :
+                      'text-base text-white/10'
+                    }`}
+                  >
                     {line || ' '}
                   </p>
                 );
@@ -446,10 +470,10 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
             </div>
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8">
-              <span className="text-7xl opacity-20">🎤</span>
-              <p className="text-gray-400 text-2xl">No lyrics available</p>
+              <span className="text-7xl opacity-10">🎤</span>
+              <p className="text-white/30 text-2xl">No lyrics available</p>
               <button onClick={handleSearchLyrics} disabled={searchingLyrics}
-                className="flex items-center gap-2 px-8 py-4 min-h-[56px] bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 rounded-2xl text-lg transition-colors shadow-lg">
+                className="flex items-center gap-2 px-8 py-4 min-h-[56px] bg-white/10 hover:bg-white/20 disabled:bg-white/5 rounded text-lg transition-colors">
                 <RefreshCw className={`w-5 h-5 ${searchingLyrics ? 'animate-spin' : ''}`} />
                 {searchingLyrics ? 'Searching online…' : 'Search for Lyrics'}
               </button>
@@ -458,20 +482,20 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
         </div>
 
         {/* ── Right panel — Up Next + All Songs ── */}
-        <div className="flex-shrink-0 w-[200px] lg:w-[220px] xl:w-[240px] border-l border-[#1a1a1a] bg-[#080808] flex flex-col overflow-hidden">
+        <div className={`flex-shrink-0 w-[200px] lg:w-[220px] xl:w-[240px] border-l border-white/10 bg-black flex flex-col overflow-hidden transition-all duration-300 ${imageFull ? 'hidden' : ''}`}>
 
           {/* Up Next */}
-          <div className="flex-shrink-0 border-b border-[#1a1a1a] flex flex-col" style={{ maxHeight: '45%' }}>
+          <div className="flex-shrink-0 border-b border-white/10 flex flex-col" style={{ maxHeight: '45%' }}>
             <div className="flex items-center gap-2 px-3 py-2 flex-shrink-0">
-              <ListMusic className="w-4 h-4 text-purple-400 flex-shrink-0" />
-              <span className="text-xs font-semibold text-gray-300 uppercase tracking-wide">Up Next</span>
+              <ListMusic className="w-4 h-4 text-[#d4af37] flex-shrink-0" />
+              <span className="text-xs font-semibold text-white/50 uppercase tracking-wide">Up Next</span>
               {queue.length > 0 && (
-                <span className="ml-auto text-xs px-1.5 py-0.5 bg-pink-500/30 text-pink-300 rounded-full">{queue.length}</span>
+                <span className="ml-auto text-xs px-1.5 py-0.5 bg-[#d4af37]/20 text-[#d4af37] rounded-full">{queue.length}</span>
               )}
             </div>
             <div className="overflow-y-auto flex-1" style={{ scrollbarWidth: 'none' }}>
               {upNext.length === 0 ? (
-                <p className="text-xs text-gray-600 px-3 pb-3">No songs queued</p>
+                <p className="text-xs text-white/20 px-3 pb-3">No songs queued</p>
               ) : (
                 upNext.map(({ song: s, queued }, i) => (
                   <div key={s.id}
@@ -482,17 +506,18 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
                     onDragEnd={handleDragEnd}
                     className={`flex items-center gap-2 px-3 py-2 cursor-pointer group transition-colors relative
                       ${dragIdx === i ? 'opacity-30' : 'hover:bg-white/5'}
-                      ${dragOver === i && dragIdx !== i ? 'border-t-2 border-purple-400' : ''}
+                      ${dragOver === i && dragIdx !== i ? 'border-t-2 border-[#d4af37]' : ''}
                     `}
-                    onClick={() => dragIdx === null && onSelectSong(s)}>
-                    <GripVertical className="w-4 h-4 text-gray-500 cursor-grab flex-shrink-0 active:cursor-grabbing hover:text-gray-300" />
+                    onClick={() => dragIdx === null && onSelectSong(s)}
+                  >
+                    <GripVertical className="w-4 h-4 text-white/20 cursor-grab flex-shrink-0 active:cursor-grabbing hover:text-white/50" />
                     {s.coverArtUrl
-                      ? <img src={s.coverArtUrl} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0" />
-                      : <div className="w-8 h-8 rounded bg-white/10 flex items-center justify-center flex-shrink-0 text-xs">🎵</div>
+                      ? <img src={s.coverArtUrl} alt="" className="w-8 h-8 object-cover flex-shrink-0" />
+                      : <div className="w-8 h-8 bg-white/10 flex items-center justify-center flex-shrink-0 text-xs">♪</div>
                     }
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium truncate">{s.title}</p>
-                      <p className="text-xs text-gray-500 truncate">{s.artist}</p>
+                      <p className="text-xs text-white/30 truncate">{s.artist}</p>
                     </div>
                     {queued ? (
                       <button onClick={e => { e.stopPropagation(); removeFromQueue(s.id); }}
@@ -508,30 +533,31 @@ export function KaraokePlayer({ song, playlist, onBack, onSelectSong, onUpdateLy
             </div>
           </div>
 
-          {/* All Songs */}
+          {/* All Songs — DJ queue panel */}
           <div className="flex-1 flex flex-col overflow-hidden min-h-0">
-            <div className="flex items-center gap-2 px-3 py-2 flex-shrink-0 border-b border-[#161616]">
-              <span className="text-xs font-semibold text-gray-300 uppercase tracking-wide">All Songs</span>
-              <span className="ml-auto text-xs text-gray-600">{otherSongs.length}</span>
+            <div className="flex items-center gap-2 px-3 py-2 flex-shrink-0 border-b border-white/5">
+              <span className="text-xs font-semibold text-white/50 uppercase tracking-wide">All Songs</span>
+              <span className="ml-auto text-xs text-white/20">{otherSongs.length}</span>
             </div>
             <div className="overflow-y-auto flex-1" style={{ scrollbarWidth: 'none' }}>
               {otherSongs.map(s => {
                 const isQueued = queue.some(q => q.id === s.id);
                 return (
                   <div key={s.id}
-                    className={`flex items-center gap-2 px-3 py-2 cursor-pointer group transition-colors ${isQueued ? 'bg-pink-500/10' : 'hover:bg-white/5'}`}
-                    onClick={() => addToQueue(s)}>
+                    className={`flex items-center gap-2 px-3 py-2 cursor-pointer group transition-colors ${isQueued ? 'bg-[#d4af37]/10' : 'hover:bg-white/5'}`}
+                    onClick={() => addToQueue(s)}
+                  >
                     {s.coverArtUrl
-                      ? <img src={s.coverArtUrl} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0" />
-                      : <div className="w-8 h-8 rounded bg-white/10 flex items-center justify-center flex-shrink-0 text-xs">🎵</div>
+                      ? <img src={s.coverArtUrl} alt="" className="w-8 h-8 object-cover flex-shrink-0" />
+                      : <div className="w-8 h-8 bg-white/10 flex items-center justify-center flex-shrink-0 text-xs">♪</div>
                     }
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-medium truncate">{s.title}</p>
-                      <p className="text-xs text-gray-500 truncate">{s.artist}</p>
+                      <p className="text-xs text-white/30 truncate">{s.artist}</p>
                     </div>
                     {isQueued
-                      ? <span className="text-xs text-pink-400 flex-shrink-0">✓</span>
-                      : <span className="text-xs text-gray-600 opacity-0 group-hover:opacity-100 flex-shrink-0">+</span>
+                      ? <span className="text-xs text-[#d4af37] flex-shrink-0">✓</span>
+                      : <span className="text-xs text-white/20 opacity-0 group-hover:opacity-100 flex-shrink-0">+</span>
                     }
                   </div>
                 );
