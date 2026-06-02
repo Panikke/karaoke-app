@@ -66,6 +66,15 @@ app.use(cors({
 
 app.use(express.json());
 
+// Serve audio/image files at /audio/ — nginx should alias this path directly,
+// but Express serves as a fallback (and as the primary when nginx proxies /audio/ here).
+app.use('/audio', express.static(AUDIO_DIR, {
+  setHeaders(res) {
+    res.setHeader('Cache-Control', 'public, max-age=2592000');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+  },
+}));
+
 // ── Multer ────────────────────────────────────────────────────────────────────
 // Audio uploads → saved to disk with UUID filename
 const audioStorage = multer.diskStorage({
