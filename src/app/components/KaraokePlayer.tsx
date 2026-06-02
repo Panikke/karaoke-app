@@ -144,6 +144,12 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
     if (audioRef.current) audioRef.current.volume = muted ? 0 : volume;
   }, [volume, muted]);
 
+  // Reset image error state whenever the lyrics image URL changes (e.g. after re-upload)
+  useEffect(() => {
+    setImageLoadError(false);
+    if (song.lyricsImageUrl) setShowImageLyrics(true);
+  }, [song.lyricsImageUrl]);
+
   // Reset on song change
   useEffect(() => {
     setIsPlaying(false);
@@ -412,7 +418,13 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
             <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center p-8">
               <span className="text-5xl opacity-20">🖼️</span>
               <p className="text-slate-400 text-sm">Lyrics image unavailable</p>
-              <p className="text-slate-500 text-xs">Re-upload via the song library</p>
+              <button
+                onClick={() => setImageLoadError(false)}
+                className="text-xs px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-slate-300 transition-colors"
+              >
+                Retry
+              </button>
+              <p className="text-slate-500 text-xs">Or re-upload via the song library</p>
             </div>
           ) : hasLyrics ? (
             <div ref={lyricsContainerRef}

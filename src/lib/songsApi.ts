@@ -173,9 +173,7 @@ export async function uploadSongToServer(
   // Upload lyrics image separately if provided
   if (payload.lyricsImageFile) {
     try {
-      await uploadLyricsImage(created.id, payload.lyricsImageFile, token);
-      const ext = payload.lyricsImageFile.name.replace(/.*(\.[^.]+)$/, '$1').toLowerCase();
-      created.lyricsImageUrl = `${AUDIO_BASE}/lyrics_${created.id}${ext}`;
+      created.lyricsImageUrl = await uploadLyricsImage(created.id, payload.lyricsImageFile, token);
     } catch (e) {
       console.warn('Lyrics image upload failed:', e);
     }
