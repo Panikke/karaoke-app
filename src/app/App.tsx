@@ -170,18 +170,6 @@ export default function App() {
     }
   }, [songs]);
 
-  const bulkSearchLyrics = useCallback(async (ids: string[]) => {
-    const { searchLyrics } = await import('../utils/lyricsApi');
-    for (const id of ids) {
-      const song = songs.find(s => s.id === id);
-      if (!song) continue;
-      try {
-        const result = await searchLyrics(song.title, song.artist);
-        if (result) await updateLyrics(id, result.plain, result.synced, 'api');
-      } catch { /* continue */ }
-    }
-  }, [songs, updateLyrics]);
-
   const playlist = songs.filter(s => s.inPlaylist);
 
   if (loading || authLoading) {
@@ -224,7 +212,6 @@ export default function App() {
           onQueueChange={setQueue}
           onSelectSong={setCurrentSong}
           onBack={() => setCurrentSong(null)}
-          onUpdateLyrics={updateLyrics}
         />
       ) : (
         <div className="size-full flex flex-col">
@@ -328,7 +315,6 @@ export default function App() {
             onDeleteSong={deleteSong}
             onEditSong={setEditingSong}
             onTogglePlaylist={togglePlaylist}
-            onSearchLyrics={bulkSearchLyrics}
             onClearLibrary={clearLibrary}
             onUpdateLyrics={updateLyrics}
             onAssignLyricsImage={updateLyricsImageFn}

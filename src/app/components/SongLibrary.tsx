@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import Fuse from 'fuse.js';
 import {
   Search, Play, Trash2, Music2, Pencil, ListMusic, ListX,
-  CheckSquare, Square, RefreshCw, Loader2, AlertTriangle, Plus,
+  Loader2, AlertTriangle, Plus,
 } from 'lucide-react';
 import type { Song } from '../App';
 import { MissingLyricsPanel } from './MissingLyricsPanel';
@@ -18,7 +18,6 @@ interface SongLibraryProps {
   onDeleteSong:        (id: string) => Promise<void>;
   onEditSong:          (song: Song) => void;
   onTogglePlaylist:    (id: string) => Promise<void>;
-  onSearchLyrics:      (ids: string[]) => Promise<void>;
   onClearLibrary:      () => Promise<void>;
   onUpdateLyrics:      (id: string, lyrics: string, synced: LyricLine[], source: Song['lyricsSource']) => Promise<void>;
   onAssignLyricsImage: (songId: string, file: File) => Promise<void>;
@@ -33,16 +32,13 @@ const lyricsBadge = (song: Song) => {
 
 export function SongLibrary({
   songs, canEdit, queue, onSelectSong, onQueueSong, onDeleteSong, onEditSong,
-  onTogglePlaylist, onSearchLyrics, onClearLibrary, onUpdateLyrics, onAssignLyricsImage,
+  onTogglePlaylist, onClearLibrary, onUpdateLyrics, onAssignLyricsImage,
 }: SongLibraryProps) {
-  const [query, setQuery]           = useState('');
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [searchingLyrics, setSearchingLyrics]   = useState(false);
-  const [searchProgress, setSearchProgress]     = useState<{ done: number; total: number } | null>(null);
-  const [confirmClear, setConfirmClear]         = useState(false);
-  const [manualSong, setManualSong]             = useState<Song | null>(null);
-  const [busyId, setBusyId]                     = useState<string | null>(null);
-  const [queuedFeedback, setQueuedFeedback]     = useState<string | null>(null);
+  const [query, setQuery]         = useState('');
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [manualSong, setManualSong]     = useState<Song | null>(null);
+  const [busyId, setBusyId]             = useState<string | null>(null);
+  const [queuedFeedback, setQueuedFeedback] = useState<string | null>(null);
 
   const missingSongs = songs.filter(s => s.syncedLyrics.length === 0 && !s.lyrics.trim() && !s.lyricsImageUrl);
 
@@ -72,38 +68,6 @@ export function SongLibrary({
     return fuse.search(q).map(r => r.item);
   }, [songs, query, fuse]);
 
-  const allFilteredSelected = filtered.length > 0 && filtered.every(s => selectedIds.has(s.id));
-
-  const toggleSelect = (id: string) => {
-    setSelectedIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-  };
-
-  const toggleSelectAll = () => {
-    if (allFilteredSelected) {
-      setSelectedIds(prev => { const n = new Set(prev); filtered.forEach(s => n.delete(s.id)); return n; });
-    } else {
-      setSelectedIds(prev => { const n = new Set(prev); filtered.forEach(s => n.add(s.id)); return n; });
-    }
-  };
-
-  const handleBulkSearchLyrics = async () => {
-    const ids = Array.from(selectedIds);
-    setSearchingLyrics(true);
-    setSearchProgress({ done: 0, total: ids.length });
-    let done = 0;
-    for (const id of ids) {
-      await onSearchLyrics([id]);
-      done++;
-      setSearchProgress({ done, total: ids.length });
-    }
-    setSearchingLyrics(false);
-    setSearchProgress(null);
-  };
-
   const handleClearLibrary = async () => {
     setConfirmClear(false);
     await onClearLibrary();
@@ -129,12 +93,10 @@ export function SongLibrary({
     }
   };
 
-  const selectedCount = Array.from(selectedIds).filter(id => filtered.some(s => s.id === id)).length;
-
   return (
     <div className="flex-1 overflow-hidden flex flex-col p-4 gap-3 bg-slate-900">
 
-      {/* ── Search + bulk action bar ── */}
+      {/* ── Search + action bar ── */}
       <div className="flex gap-2 flex-wrap items-center">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
@@ -157,37 +119,6 @@ export function SongLibrary({
           <span className="text-xs text-slate-500 font-mono hidden sm:block">
             {filtered.length} found
           </span>
-        )}
-
-        {canEdit && (
-          <button
-            onClick={toggleSelectAll}
-            className="flex items-center gap-2 px-4 py-3 bg-slate-800 border border-slate-700 hover:border-slate-600 rounded text-sm transition-colors"
-          >
-            {allFilteredSelected
-              ? <CheckSquare className="w-4 h-4 text-orange-500" />
-              : <Square className="w-4 h-4 text-slate-500" />
-            }
-            <span className="text-slate-400 hidden sm:inline">
-              {allFilteredSelected ? 'Deselect All' : 'Select All'}
-            </span>
-          </button>
-        )}
-
-        {canEdit && selectedCount > 0 && (
-          <button
-            onClick={handleBulkSearchLyrics}
-            disabled={searchingLyrics}
-            className="flex items-center gap-2 px-4 py-3 bg-orange-500/10 hover:bg-orange-500/20 border border-orange-500/30 hover:border-orange-500/50 disabled:opacity-40 rounded text-sm text-orange-400 transition-colors"
-          >
-            {searchingLyrics ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-            <span>
-              {searchingLyrics && searchProgress
-                ? `${searchProgress.done}/${searchProgress.total}`
-                : `Search Lyrics (${selectedCount})`
-              }
-            </span>
-          </button>
         )}
 
         {canEdit && songs.length > 0 && (
@@ -231,7 +162,6 @@ export function SongLibrary({
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 pb-4">
             {filtered.map(song => {
               const badge      = lyricsBadge(song);
-              const isSelected = selectedIds.has(song.id);
               const inPlaylist = song.inPlaylist;
               const isBusy     = busyId === song.id;
               const isQueued   = queue.some(q => q.id === song.id);
@@ -243,28 +173,14 @@ export function SongLibrary({
                   className={`bg-slate-800 border rounded-xl transition-all group cursor-pointer relative overflow-hidden ${
                     justQueued
                       ? 'border-orange-500 shadow-[0_0_20px_rgba(249,115,22,0.2)]'
-                      : isSelected
-                      ? 'border-orange-500/60 shadow-[0_0_20px_rgba(249,115,22,0.1)]'
                       : isQueued && !canEdit
                       ? 'border-orange-500/30'
                       : inPlaylist
-                      ? 'border-slate-700 hover:border-slate-500 hover:shadow-[0_0_16px_rgba(255,255,255,0.05)]'
+                      ? 'border-slate-700 hover:border-slate-500'
                       : 'border-slate-700/50 opacity-50 hover:opacity-70'
                   }`}
                   onClick={() => handleCardClick(song)}
                 >
-                  {canEdit && (
-                    <button
-                      onClick={e => { e.stopPropagation(); toggleSelect(song.id); }}
-                      className="absolute top-2 left-2 z-10 p-1"
-                    >
-                      {isSelected
-                        ? <CheckSquare className="w-4 h-4 text-orange-500" />
-                        : <Square className="w-4 h-4 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-                      }
-                    </button>
-                  )}
-
                   <div className="relative h-48 bg-slate-900 flex items-center justify-center overflow-hidden">
                     {song.coverArtUrl
                       ? <img src={song.coverArtUrl} alt={song.title} className="w-full h-full object-cover" />
@@ -290,14 +206,12 @@ export function SongLibrary({
                       {badge.label}
                     </span>
 
-                    {/* Patron queue indicator */}
                     {!canEdit && isQueued && (
                       <span className="absolute bottom-2 right-2 text-[10px] px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/40 font-medium">
                         Queued
                       </span>
                     )}
 
-                    {/* Off-playlist indicator (editor view) */}
                     {canEdit && !inPlaylist && (
                       <span className="absolute bottom-2 right-2 text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-500 border border-slate-700">
                         off
@@ -363,7 +277,6 @@ export function SongLibrary({
       {canEdit && (
         <MissingLyricsPanel
           songs={missingSongs}
-          onSearchOnline={id => onSearchLyrics([id])}
           onManualEdit={setManualSong}
           onAssignImage={onAssignLyricsImage}
         />

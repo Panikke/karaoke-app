@@ -1,7 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { X, FolderUp, CheckCircle, AlertCircle, Loader2, FileText, Music } from 'lucide-react';
 import type { SongUploadPayload } from '../App';
-import { searchLyrics } from '../../utils/lyricsApi';
 import { parseLrc } from '../../utils/lrcParser';
 
 interface BulkUploadDialogProps {
@@ -9,7 +8,7 @@ interface BulkUploadDialogProps {
   onUpload: (songs: SongUploadPayload[], onProgress?: (done: number, total: number, filePct?: number) => void) => Promise<void>;
 }
 
-type LyricsStatus = 'pending' | 'searching' | 'found' | 'not-found' | 'manual' | 'file';
+type LyricsStatus = 'pending' | 'manual' | 'file';
 
 interface UploadItem {
   file: File;
@@ -211,36 +210,13 @@ export function BulkUploadDialog({ onClose, onUpload }: BulkUploadDialogProps) {
     setLoading(false);
   }, [items, lyricsFiles]);
 
-  const searchAll = useCallback(async () => {
-    setLoading(true);
-    const pending = items.map((item, i) => ({ item, i })).filter(({ item }) =>
-      item.status === 'pending' || item.status === 'not-found'
-    );
-
-    setItems(prev => prev.map((item, i) =>
-      pending.find(p => p.i === i) ? { ...item, status: 'searching' as LyricsStatus } : item
-    ));
-
-    await Promise.all(pending.map(async ({ item, i }) => {
-      const result = await searchLyrics(item.title, item.artist);
-      setItems(prev => prev.map((it, idx) =>
-        idx === i
-          ? result
-            ? { ...it, lyrics: result.plain, syncedLyrics: result.synced, lyricsSource: 'api', status: 'found' as LyricsStatus }
-            : { ...it, status: 'not-found' as LyricsStatus }
-          : it
-      ));
-    }));
-    setLoading(false);
-  }, [items]);
-
   const setEditing = (i: number, editing: boolean) => {
     setItems(prev => prev.map((it, idx) => idx === i ? { ...it, editing } : it));
   };
 
   const setManualLyrics = (i: number, lyrics: string) => {
     setItems(prev => prev.map((it, idx) =>
-      idx === i ? { ...it, lyrics, lyricsSource: 'manual', status: lyrics.trim() ? 'manual' : 'not-found' as LyricsStatus } : it
+      idx === i ? { ...it, lyrics, lyricsSource: 'manual', status: lyrics.trim() ? 'manual' : 'pending' as LyricsStatus } : it
     ));
   };
 
@@ -282,17 +258,12 @@ export function BulkUploadDialog({ onClose, onUpload }: BulkUploadDialogProps) {
   };
 
   const statusIcon = (s: LyricsStatus) => {
-    if (s === 'found' || s === 'file' || s === 'manual') return <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0" />;
-    if (s === 'not-found') return <AlertCircle className="w-5 h-5 text-yellow-400 flex-shrink-0" />;
-    if (s === 'searching') return <Loader2 className="w-5 h-5 text-blue-400 flex-shrink-0 animate-spin" />;
+    if (s === 'file' || s === 'manual') return <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0" />;
     return <Music className="w-5 h-5 text-gray-400 flex-shrink-0" />;
   };
 
   const statusLabel = (s: LyricsStatus) => ({
-    pending: 'Pending',
-    searching: 'Searching...',
-    found: 'Found online',
-    'not-found': 'Not found',
+    pending: 'No lyrics',
     manual: 'Manual',
     file: 'From file',
   }[s]);
@@ -363,7 +334,7 @@ export function BulkUploadDialog({ onClose, onUpload }: BulkUploadDialogProps) {
           {items.length > 0 && (
             <>
               {/* Action buttons */}
-              <div className="flex gap-3 flex-wrap">
+              <div className="flex gap-3 flex-wrap items-center">
                 {lyricsFiles.length > 0 && (
                   <button onClick={matchFromFiles} disabled={loading}
                     className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
@@ -371,13 +342,8 @@ export function BulkUploadDialog({ onClose, onUpload }: BulkUploadDialogProps) {
                     Match from Files
                   </button>
                 )}
-                <button onClick={searchAll} disabled={loading}
-                  className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 rounded-lg text-sm font-medium transition-colors flex items-center gap-2">
-                  {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
-                  Auto-Search Lyrics Online
-                </button>
                 <span className="ml-auto self-center text-sm text-gray-400">
-                  {readyCount}/{items.length} songs ready
+                  {readyCount}/{items.length} songs have lyrics
                 </span>
               </div>
 
@@ -410,7 +376,7 @@ export function BulkUploadDialog({ onClose, onUpload }: BulkUploadDialogProps) {
                           </div>
                         )}
 
-                        {(item.status === 'not-found' || item.status === 'pending' || item.editing) && (
+                        {(item.status === 'pending' || item.editing) && (
                           <textarea
                             className="mt-2 w-full px-3 py-2 bg-black/30 border border-white/20 rounded text-sm text-white focus:outline-none focus:border-purple-500 min-h-[60px]"
                             placeholder="Paste lyrics manually..."

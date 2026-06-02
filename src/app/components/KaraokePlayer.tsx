@@ -1,12 +1,11 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import {
   ArrowLeft, Play, Pause, SkipBack, SkipForward,
-  Volume2, VolumeX, Maximize, Minimize, RefreshCw,
+  Volume2, VolumeX, Maximize, Minimize,
   ChevronLeft, ChevronRight, ListMusic, X, Repeat, GripVertical, Expand, Shrink,
 } from 'lucide-react';
 import type { Song } from '../App';
 import { getCurrentLineIndex } from '../../utils/lrcParser';
-import { searchLyrics } from '../../utils/lyricsApi';
 
 interface KaraokePlayerProps {
   song: Song;
@@ -15,10 +14,9 @@ interface KaraokePlayerProps {
   onQueueChange: React.Dispatch<React.SetStateAction<Song[]>>;
   onBack: () => void;
   onSelectSong: (song: Song) => void;
-  onUpdateLyrics: (id: string, lyrics: string, synced: import('../../utils/lrcParser').LyricLine[], source: Song['lyricsSource']) => Promise<void>;
 }
 
-export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, onSelectSong, onUpdateLyrics }: KaraokePlayerProps) {
+export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, onSelectSong }: KaraokePlayerProps) {
   const [isPlaying, setIsPlaying]             = useState(false);
   const [currentTime, setCurrentTime]         = useState(0);
   const [duration, setDuration]               = useState(0);
@@ -26,7 +24,6 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
   const [muted, setMuted]                     = useState(false);
   const [isFullscreen, setIsFullscreen]       = useState(false);
   const [controlsVisible, setControlsVisible] = useState(true);
-  const [searchingLyrics, setSearchingLyrics] = useState(false);
   const [showImageLyrics, setShowImageLyrics] = useState(false);
   const [imageLoadError, setImageLoadError]   = useState(false);
   const [imageFull, setImageFull]             = useState(false);
@@ -239,16 +236,6 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
     else document.exitFullscreen();
   };
 
-  const handleSearchLyrics = useCallback(async () => {
-    setSearchingLyrics(true);
-    try {
-      const result = await searchLyrics(song.title, song.artist);
-      if (result) await onUpdateLyrics(song.id, result.plain, result.synced, 'api');
-    } finally {
-      setSearchingLyrics(false);
-    }
-  }, [song.id, song.title, song.artist, onUpdateLyrics]);
-
   const handleDragStart = (idx: number) => setDragIdx(idx);
   const handleDragOver  = (e: React.DragEvent, idx: number) => { e.preventDefault(); setDragOver(idx); };
   const handleDrop      = (e: React.DragEvent, toIdx: number) => {
@@ -300,16 +287,6 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
           {nextSong && (
             <button onClick={goNext} className="min-w-[48px] min-h-[48px] flex items-center justify-center hover:bg-slate-700 rounded transition-colors" title={nextSong.title}>
               <ChevronRight className="w-5 h-5" />
-            </button>
-          )}
-          {!hasLyrics && (
-            <button
-              onClick={handleSearchLyrics}
-              disabled={searchingLyrics}
-              className="flex items-center gap-1.5 px-3 min-h-[48px] bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 rounded text-sm transition-colors"
-            >
-              <RefreshCw className={`w-4 h-4 ${searchingLyrics ? 'animate-spin' : ''}`} />
-              <span className="hidden sm:inline">{searchingLyrics ? 'Searching…' : 'Find Lyrics'}</span>
             </button>
           )}
           <button onClick={toggleFullscreen} className="min-w-[48px] min-h-[48px] flex items-center justify-center hover:bg-slate-700 rounded transition-colors">
@@ -468,14 +445,10 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
               })}
             </div>
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center gap-6 p-8">
+            <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8">
               <span className="text-7xl opacity-10">🎤</span>
-              <p className="text-slate-400 text-2xl">No lyrics available</p>
-              <button onClick={handleSearchLyrics} disabled={searchingLyrics}
-                className="flex items-center gap-2 px-8 py-4 min-h-[56px] bg-slate-700 hover:bg-slate-600 disabled:bg-slate-800 rounded text-lg transition-colors">
-                <RefreshCw className={`w-5 h-5 ${searchingLyrics ? 'animate-spin' : ''}`} />
-                {searchingLyrics ? 'Searching online…' : 'Search for Lyrics'}
-              </button>
+              <p className="text-slate-400 text-xl">No lyrics image uploaded</p>
+              <p className="text-slate-500 text-sm">Add a screenshot via the library</p>
             </div>
           )}
         </div>
