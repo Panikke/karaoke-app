@@ -13,6 +13,10 @@ import path from 'path';
 import fs from 'fs/promises';
 import { existsSync, mkdirSync } from 'fs';
 import { randomUUID } from 'crypto';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+
+const execFileAsync = promisify(execFile);
 import { parseFile as parseAudioFile } from 'music-metadata';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -150,6 +154,21 @@ async function requireEditor(req, res, next) {
   next();
 }
 
+// ── Audio transcoding ─────────────────────────────────────────────────────────
+// Converts WAV/FLAC uploads to MP3 so large uncompressed files don't cause
+// buffering issues when streaming over the network.
+const TRANSCODE_EXTS = new Set(['.wav', '.flac', '.aiff', '.aif']);
+
+async function transcodeToMp3(inputPath, outputPath) {
+  await execFileAsync('ffmpeg', [
+    '-i', inputPath,
+    '-codec:a', 'libmp3lame',
+    '-q:a', '2',   // ~190 kbps VBR — transparent quality
+    '-y',          // overwrite output
+    outputPath,
+  ]);
+}
+
 // ── Routes ────────────────────────────────────────────────────────────────────
 
 // Health check
@@ -187,6 +206,24 @@ app.post(
       const file = files[i];
       const meta = metaList[i] || {};
 
+      // Transcode WAV/FLAC → MP3 before storing
+      let audioFilename = file.filename;
+      const ext = path.extname(file.filename).toLowerCase();
+      if (TRANSCODE_EXTS.has(ext)) {
+        const mp3Filename = file.filename.replace(/\.[^.]+$/, '.mp3');
+        const inputPath   = path.join(AUDIO_DIR, file.filename);
+        const mp3Path     = path.join(AUDIO_DIR, mp3Filename);
+        try {
+          console.log(`[UPLOAD] Transcoding ${file.filename} → ${mp3Filename}`);
+          await transcodeToMp3(inputPath, mp3Path);
+          await fs.unlink(inputPath).catch(() => {});
+          audioFilename = mp3Filename;
+          console.log(`[UPLOAD] Transcode complete: ${mp3Filename}`);
+        } catch (err) {
+          console.warn(`[UPLOAD] Transcode failed, keeping original:`, err.message);
+        }
+      }
+
       console.log(`[UPLOAD] Inserting "${meta.title || file.originalname}" into Supabase`);
       const { data, error } = await supabase
         .from('songs')
@@ -198,7 +235,7 @@ app.post(
           lyrics:         meta.lyrics        || '',
           synced_lyrics:  meta.syncedLyrics  || [],
           lyrics_source:  meta.lyricsSource  || 'none',
-          audio_filename: file.filename,      // UUID.ext on disk
+          audio_filename: audioFilename,      // UUID.mp3 on disk
           in_playlist:    true,
         })
         .select()
@@ -206,8 +243,7 @@ app.post(
 
       if (error) {
         console.error(`[UPLOAD] Supabase insert failed:`, error.message);
-        // Remove orphaned file
-        await fs.unlink(path.join(AUDIO_DIR, file.filename)).catch(() => {});
+        await fs.unlink(path.join(AUDIO_DIR, audioFilename)).catch(() => {});
         failed.push({ file: file.originalname, error: error.message });
       } else {
         console.log(`[UPLOAD] Inserted OK, id:`, data.id);
