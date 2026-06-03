@@ -13,13 +13,9 @@ import path from 'path';
 import fs from 'fs/promises';
 import { existsSync, mkdirSync } from 'fs';
 import { randomUUID } from 'crypto';
-import { execFile } from 'child_process';
+import { execFile, exec } from 'child_process';
 import { promisify } from 'util';
-
-const execFileAsync = promisify(execFile);
 import { parseFile as parseAudioFile } from 'music-metadata';
-import { exec } from 'child_process';
-import { promisify } from 'util';
 import dns from 'dns';
 
 // Force IPv4-first DNS resolution. Without this, Node 18+ may try IPv6 routes
@@ -27,7 +23,8 @@ import dns from 'dns';
 // surfacing as repeated EAI_AGAIN errors.
 dns.setDefaultResultOrder('ipv4first');
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
+const execAsync     = promisify(exec);
 
 // Load .env from the project root (one level up from server/)
 dotenv.config({ path: path.resolve(import.meta.dirname, '..', '.env') });
