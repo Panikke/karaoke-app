@@ -41,7 +41,7 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
   const playlistRef        = useRef<Song[]>([]);
   const currentSongRef     = useRef<Song>(song);
   const autoplayRef        = useRef(true);
-  const shouldAutoplayRef  = useRef(false);
+  const shouldAutoplayRef  = useRef(true);
 
   useEffect(() => { queueRef.current = queue; }, [queue]);
   useEffect(() => { playlistRef.current = playlist; }, [playlist]);
@@ -109,6 +109,17 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
       if (idx < pl.length - 1) onSelectSong(pl[idx + 1]);
     }
   }, [onSelectSong, onQueueChange]);
+
+  // User-initiated navigation — always autoplay the selected song
+  const selectAndPlay = useCallback((s: Song) => {
+    shouldAutoplayRef.current = true;
+    onSelectSong(s);
+  }, [onSelectSong]);
+
+  const goNextAndPlay = useCallback(() => {
+    shouldAutoplayRef.current = true;
+    goNext();
+  }, [goNext]);
 
   // Auto-scroll active lyric line
   useEffect(() => {
@@ -203,9 +214,9 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
     });
     navigator.mediaSession.setActionHandler('play',          () => { audioRef.current?.play(); setIsPlaying(true); });
     navigator.mediaSession.setActionHandler('pause',         () => { audioRef.current?.pause(); setIsPlaying(false); });
-    navigator.mediaSession.setActionHandler('previoustrack', prevSong ? () => onSelectSong(prevSong) : null);
-    navigator.mediaSession.setActionHandler('nexttrack',     nextSong ? goNext : null);
-  }, [song, prevSong, nextSong, goNext, onSelectSong]);
+    navigator.mediaSession.setActionHandler('previoustrack', prevSong ? () => selectAndPlay(prevSong) : null);
+    navigator.mediaSession.setActionHandler('nexttrack',     nextSong ? goNextAndPlay : null);
+  }, [song, prevSong, nextSong, goNextAndPlay, selectAndPlay]);
 
   // Auto-hide controls in fullscreen
   const showControls = useCallback(() => {
@@ -286,12 +297,12 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
 
         <div className="flex items-center gap-1 flex-shrink-0">
           {prevSong && (
-            <button onClick={() => onSelectSong(prevSong)} className="min-w-[48px] min-h-[48px] flex items-center justify-center hover:bg-slate-700 rounded transition-colors" title={prevSong.title}>
+            <button onClick={() => selectAndPlay(prevSong)} className="min-w-[48px] min-h-[48px] flex items-center justify-center hover:bg-slate-700 rounded transition-colors" title={prevSong.title}>
               <ChevronLeft className="w-5 h-5" />
             </button>
           )}
           {nextSong && (
-            <button onClick={goNext} className="min-w-[48px] min-h-[48px] flex items-center justify-center hover:bg-slate-700 rounded transition-colors" title={nextSong.title}>
+            <button onClick={goNextAndPlay} className="min-w-[48px] min-h-[48px] flex items-center justify-center hover:bg-slate-700 rounded transition-colors" title={nextSong.title}>
               <ChevronRight className="w-5 h-5" />
             </button>
           )}
@@ -328,7 +339,7 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
           </div>
 
           <div className="flex items-center justify-center gap-3 mt-3">
-            <button onClick={() => prevSong && onSelectSong(prevSong)} disabled={!prevSong}
+            <button onClick={() => prevSong && selectAndPlay(prevSong)} disabled={!prevSong}
               className="w-12 h-12 flex items-center justify-center hover:bg-slate-700 rounded-full transition-colors disabled:opacity-25">
               <SkipBack className="w-6 h-6" />
             </button>
@@ -344,7 +355,7 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
               className="w-11 h-11 flex items-center justify-center hover:bg-slate-700 rounded-full transition-colors text-xs font-bold text-slate-300">
               +10s
             </button>
-            <button onClick={goNext} disabled={!nextSong}
+            <button onClick={goNextAndPlay} disabled={!nextSong}
               className="w-12 h-12 flex items-center justify-center hover:bg-slate-700 rounded-full transition-colors disabled:opacity-25">
               <SkipForward className="w-6 h-6" />
             </button>
@@ -492,7 +503,7 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
                       ${dragIdx === i ? 'opacity-30' : 'hover:bg-slate-700/50'}
                       ${dragOver === i && dragIdx !== i ? 'border-t-2 border-orange-500' : ''}
                     `}
-                    onClick={() => dragIdx === null && onSelectSong(s)}
+                    onClick={() => dragIdx === null && selectAndPlay(s)}
                   >
                     <GripVertical className="w-4 h-4 text-slate-500 cursor-grab flex-shrink-0 active:cursor-grabbing hover:text-slate-300" />
                     {s.coverArtUrl
@@ -500,7 +511,10 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
                       : <div className="w-8 h-8 rounded bg-slate-600 flex items-center justify-center flex-shrink-0 text-xs">♪</div>
                     }
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium truncate">{s.title}</p>
+                      <p className="text-xs font-medium truncate">
+                        {s.trackNumber && <span className="text-slate-500 font-normal">{s.trackNumber}. </span>}
+                        {s.title}
+                      </p>
                       <p className="text-xs text-slate-400 truncate">{s.artist}</p>
                     </div>
                     {queued ? (
@@ -536,7 +550,10 @@ export function KaraokePlayer({ song, playlist, queue, onQueueChange, onBack, on
                       : <div className="w-8 h-8 rounded bg-slate-600 flex items-center justify-center flex-shrink-0 text-xs">♪</div>
                     }
                     <div className="flex-1 min-w-0">
-                      <p className="text-xs font-medium truncate">{s.title}</p>
+                      <p className="text-xs font-medium truncate">
+                        {s.trackNumber && <span className="text-slate-500 font-normal">{s.trackNumber}. </span>}
+                        {s.title}
+                      </p>
                       <p className="text-xs text-slate-400 truncate">{s.artist}</p>
                     </div>
                     {isQueued
