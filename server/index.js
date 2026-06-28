@@ -111,8 +111,18 @@ const imageUpload = multer({
   },
 });
 
+// ── Async wrapper ─────────────────────────────────────────────────────────────
+// Express 4 does NOT catch rejected promises thrown from async middleware or
+// route handlers. An unhandled rejection (e.g. a transient Supabase/DNS failure
+// like the EAI_AGAIN issue noted above) would otherwise crash the whole process
+// under Node ≥15 — taking the API down and surfacing as a 502 Bad Gateway until
+// pm2 restarts it. Wrapping every async handler funnels such errors into the
+// global error handler instead, so one bad request can't kill the server.
+const asyncHandler = (fn) => (req, res, next) =>
+  Promise.resolve(fn(req, res, next)).catch(next);
+
 // ── Auth Middleware ───────────────────────────────────────────────────────────
-async function requireAuth(req, res, next) {
+const requireAuth = asyncHandler(async (req, res, next) => {
   console.log(`[AUTH] ${req.method} ${req.path}`);
   const auth = req.headers.authorization;
   if (!auth?.startsWith('Bearer ')) {
@@ -128,9 +138,9 @@ async function requireAuth(req, res, next) {
   console.log('[AUTH] OK, user:', user.email);
   req.user = user;
   next();
-}
+});
 
-async function requireEditor(req, res, next) {
+const requireEditor = asyncHandler(async (req, res, next) => {
   const { data: profile, error } = await supabase
     .from('profiles')
     .select('role, can_edit_playlist')
@@ -149,7 +159,7 @@ async function requireEditor(req, res, next) {
   }
   req.profile = profile;
   next();
-}
+});
 
 // ── Audio transcoding ─────────────────────────────────────────────────────────
 // Converts WAV/FLAC uploads to MP3 so large uncompressed files don't cause
@@ -181,7 +191,7 @@ app.post(
   requireAuth,
   requireEditor,
   audioUpload.array('audio'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     console.log('[UPLOAD] Handler reached, files:', req.files?.length ?? 0);
     const files = req.files;
     if (!files?.length) {
@@ -253,7 +263,7 @@ app.post(
     }
 
     res.json({ songs: inserted, failed });
-  }
+  })
 );
 
 /**
@@ -265,7 +275,7 @@ app.post(
   requireAuth,
   requireEditor,
   imageUpload.single('image'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No image file' });
     const { id } = req.params;
 
@@ -290,7 +300,7 @@ app.post(
 
     if (error) return res.status(500).json({ error: error.message });
     res.json({ filename });
-  }
+  })
 );
 
 /**
@@ -302,7 +312,7 @@ app.post(
   requireAuth,
   requireEditor,
   imageUpload.single('image'),
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     if (!req.file) return res.status(400).json({ error: 'No image file' });
     const { id } = req.params;
 
@@ -326,13 +336,13 @@ app.post(
 
     if (error) return res.status(500).json({ error: error.message });
     res.json({ filename });
-  }
+  })
 );
 
 /**
  * DELETE /api/songs/:id
  */
-app.delete('/api/songs/:id', requireAuth, requireEditor, async (req, res) => {
+app.delete('/api/songs/:id', requireAuth, requireEditor, asyncHandler(async (req, res) => {
   const { id } = req.params;
 
   const { data: song } = await supabase
@@ -354,12 +364,12 @@ app.delete('/api/songs/:id', requireAuth, requireEditor, async (req, res) => {
   const { error } = await supabase.from('songs').delete().eq('id', id);
   if (error) return res.status(500).json({ error: error.message });
   res.json({ ok: true });
-});
+}));
 
 /**
  * DELETE /api/songs  (admin only — clear entire library)
  */
-app.delete('/api/songs', requireAuth, async (req, res) => {
+app.delete('/api/songs', requireAuth, asyncHandler(async (req, res) => {
   const { data: profile } = await supabase
     .from('profiles')
     .select('role')
@@ -394,7 +404,7 @@ app.delete('/api/songs', requireAuth, async (req, res) => {
 
   if (error) return res.status(500).json({ error: error.message });
   res.json({ ok: true });
-});
+}));
 
 // ── Library Scan (Plex/Navidrome-style) ──────────────────────────────────────
 // Files are placed in INCOMING_DIR via SCP/Samba/SFTP, then this scans them,
@@ -435,7 +445,7 @@ async function extractMetadata(filePath) {
  * GET /api/library/incoming
  * Lists files currently in INCOMING_DIR with parsed metadata preview.
  */
-app.get('/api/library/incoming', requireAuth, requireEditor, async (_req, res) => {
+app.get('/api/library/incoming', requireAuth, requireEditor, asyncHandler(async (_req, res) => {
   console.log('[SCAN] List incoming requested');
   try {
     const entries = await fs.readdir(INCOMING_DIR, { withFileTypes: true });
@@ -466,7 +476,7 @@ app.get('/api/library/incoming', requireAuth, requireEditor, async (_req, res) =
     console.error('[SCAN] List incoming failed:', err.message);
     res.status(500).json({ error: err.message });
   }
-});
+}));
 
 /**
  * POST /api/library/scan
@@ -474,7 +484,7 @@ app.get('/api/library/incoming', requireAuth, requireEditor, async (_req, res) =
  * Processes each file: extract tags, move to AUDIO_DIR with UUID name, save cover
  * art if embedded, insert Supabase row. Failed files move to FAILED_DIR.
  */
-app.post('/api/library/scan', requireAuth, requireEditor, async (req, res) => {
+app.post('/api/library/scan', requireAuth, requireEditor, asyncHandler(async (req, res) => {
   const language = req.body?.language || 'Greek (Ελληνικά)';
   const requested = Array.isArray(req.body?.files) ? req.body.files : null;
   console.log(`[SCAN] Starting scan (language=${language}, files=${requested?.length ?? 'all'})`);
@@ -556,7 +566,7 @@ app.post('/api/library/scan', requireAuth, requireEditor, async (req, res) => {
     console.error('[SCAN] Scan failed:', err.message);
     res.status(500).json({ error: err.message });
   }
-});
+}));
 
 /**
  * GET /api/library/sync-config
@@ -574,7 +584,7 @@ app.get('/api/library/sync-config', requireAuth, requireEditor, (_req, res) => {
  * Pulls new files from the configured rclone remote into INCOMING_DIR.
  * Uses `rclone copy` (not sync) so cloud files are not deleted.
  */
-app.post('/api/library/sync', requireAuth, requireEditor, async (_req, res) => {
+app.post('/api/library/sync', requireAuth, requireEditor, asyncHandler(async (_req, res) => {
   if (!RCLONE_REMOTE) {
     return res.status(400).json({
       error: 'Cloud sync not configured. Set RCLONE_REMOTE in .env (e.g. "onedrive:karaoke-incoming") and configure the rclone remote on the Pi.',
@@ -605,13 +615,27 @@ app.post('/api/library/sync', requireAuth, requireEditor, async (_req, res) => {
       error: `rclone failed: ${err.message}. Is rclone installed and is the remote configured?`,
     });
   }
-});
+}));
 
 // ── Global error handler (catches multer & other middleware errors) ───────────
 app.use((err, req, res, _next) => {
   console.error(`[ERROR] ${req.method} ${req.path}:`, err.message);
   const status = err.status || err.statusCode || 500;
   res.status(status).json({ error: err.message || 'Internal server error' });
+});
+
+// ── Process-level safety net ──────────────────────────────────────────────────
+// Last line of defence. With every async handler wrapped above these should be
+// rare, but if something still slips through we want a logged reason rather than
+// a silent death. An unhandled rejection is logged and swallowed so the server
+// keeps serving; an uncaught exception leaves the process in an unknown state, so
+// we log and exit to let pm2 restart it cleanly.
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL] Unhandled promise rejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] Uncaught exception:', err);
+  process.exit(1);
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
