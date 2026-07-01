@@ -5,6 +5,7 @@ import {
   Loader2, AlertTriangle, Plus, Download, Check, WifiOff,
 } from 'lucide-react';
 import type { Song } from '../App';
+import { downloadsSizeBytes } from '../../lib/offline';
 import { MissingLyricsPanel } from './MissingLyricsPanel';
 import { ManualLyricsDialog } from './ManualLyricsDialog';
 import type { LyricLine } from '../../utils/lrcParser';
@@ -31,6 +32,11 @@ interface SongLibraryProps {
   onUpdateLyrics:      (id: string, lyrics: string, synced: LyricLine[], source: Song['lyricsSource']) => Promise<void>;
   onAssignLyricsImage: (songId: string, file: File) => Promise<void>;
 }
+
+const fmtBytes = (n: number) =>
+  n >= 1_073_741_824 ? `${(n / 1_073_741_824).toFixed(1)} GB`
+  : n >= 1_048_576   ? `${Math.round(n / 1_048_576)} MB`
+  : `${Math.max(1, Math.round(n / 1024))} KB`;
 
 const lyricsBadge = (song: Song) => {
   if (song.syncedLyrics.length > 0) return { label: 'Synced', cls: 'bg-blue-500/15 text-blue-400 border border-blue-500/30' };
@@ -122,20 +128,28 @@ export function SongLibrary({
   };
 
   // Download every playlist song that isn't already on the device
-  const [bulkDownloading, setBulkDownloading] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
   const pendingPlaylistCount = songs.filter(s => s.inPlaylist && !downloadedIds.has(s.id)).length;
   const downloadPlaylist = async () => {
     if (!onDownloadSong) return;
-    setBulkDownloading(true);
+    const pending = songs.filter(s => s.inPlaylist && !downloadedIds.has(s.id));
+    setBulkProgress({ done: 0, total: pending.length });
     try {
-      for (const song of songs.filter(s => s.inPlaylist && !downloadedIds.has(s.id))) {
-        try { await onDownloadSong(song); }
-        catch (e) { console.warn(`Download failed for "${song.title}":`, e); }
+      for (let i = 0; i < pending.length; i++) {
+        try { await onDownloadSong(pending[i]); }
+        catch (e) { console.warn(`Download failed for "${pending[i].title}":`, e); }
+        setBulkProgress({ done: i + 1, total: pending.length });
       }
     } finally {
-      setBulkDownloading(false);
+      setBulkProgress(null);
     }
   };
+
+  // Storage used by downloads — native only, refreshed as downloads change
+  const [storageBytes, setStorageBytes] = useState(0);
+  useEffect(() => {
+    if (onDownloadSong) downloadsSizeBytes().then(setStorageBytes);
+  }, [downloadedIds, onDownloadSong]);
 
   return (
     <div className="flex-1 overflow-hidden flex flex-col p-4 gap-3 bg-slate-900">
@@ -172,20 +186,29 @@ export function SongLibrary({
           </div>
         )}
 
-        {onDownloadSong && !offline && pendingPlaylistCount > 0 && (
+        {onDownloadSong && !offline && (pendingPlaylistCount > 0 || bulkProgress) && (
           <button
             onClick={downloadPlaylist}
-            disabled={bulkDownloading}
+            disabled={!!bulkProgress}
             className="flex items-center gap-2 px-4 py-3 bg-slate-800 border border-slate-700 hover:border-orange-500/40 hover:text-orange-400 rounded text-sm text-slate-400 transition-colors disabled:opacity-60"
           >
-            {bulkDownloading
+            {bulkProgress
               ? <Loader2 className="w-4 h-4 animate-spin" />
               : <Download className="w-4 h-4" />
             }
-            <span className="hidden sm:inline">
-              {bulkDownloading ? 'Downloading…' : `Download playlist (${pendingPlaylistCount})`}
+            <span>
+              {bulkProgress
+                ? `Downloading ${bulkProgress.done} of ${bulkProgress.total}…`
+                : `Download playlist (${pendingPlaylistCount})`
+              }
             </span>
           </button>
+        )}
+
+        {onDownloadSong && storageBytes > 0 && (
+          <span className="text-xs text-slate-500 font-mono whitespace-nowrap" title="Storage used by downloaded songs">
+            {fmtBytes(storageBytes)} on device
+          </span>
         )}
 
         {canEdit && songs.length > 0 && (
