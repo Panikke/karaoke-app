@@ -33,4 +33,12 @@ export default defineConfig({
 
   // File types to support raw imports. Never add .css, .tsx, or .ts files to this.
   assetsInclude: ['**/*.svg', '**/*.csv'],
+
+  // Dev only — production nginx does this same /api and /audio proxying.
+  server: {
+    proxy: {
+      '/api': 'http://localhost:3001',
+      '/audio': 'http://localhost:3001',
+    },
+  },
 })
