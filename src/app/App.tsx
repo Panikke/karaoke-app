@@ -53,6 +53,8 @@ export default function App() {
   const [songs, setSongs]             = useState<Song[]>([]);
   const [currentSong, setCurrentSong] = useState<Song | null>(null);
   const [queue, setQueue]             = useState<Song[]>([]);
+  // Song to scroll back to when the library remounts after leaving the player
+  const [returnToSongId, setReturnToSongId] = useState<string | null>(null);
   const [showBulkUpload, setShowBulkUpload]             = useState(false);
   const [showBulkImages, setShowBulkImages]             = useState(false);
   const [showBulkLyricsImages, setShowBulkLyricsImages] = useState(false);
@@ -211,7 +213,7 @@ export default function App() {
           queue={queue}
           onQueueChange={setQueue}
           onSelectSong={setCurrentSong}
-          onBack={() => setCurrentSong(null)}
+          onBack={() => { setReturnToSongId(currentSong.id); setCurrentSong(null); }}
         />
       ) : (
         <div className="size-full flex flex-col">
@@ -310,6 +312,7 @@ export default function App() {
             songs={songs}
             canEdit={!!canEditPlaylist}
             queue={queue}
+            scrollToSongId={returnToSongId}
             onSelectSong={setCurrentSong}
             onQueueSong={addToQueue}
             onDeleteSong={deleteSong}

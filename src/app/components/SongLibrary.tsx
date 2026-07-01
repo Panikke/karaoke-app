@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import Fuse from 'fuse.js';
 import {
   Search, Play, Trash2, Music2, Pencil, ListMusic, ListX,
@@ -13,6 +13,8 @@ interface SongLibraryProps {
   songs: Song[];
   canEdit: boolean;
   queue: Song[];
+  /** Scroll this song into view on mount (set when returning from the player) */
+  scrollToSongId?: string | null;
   onSelectSong:        (song: Song) => void;
   onQueueSong:         (song: Song) => void;
   onDeleteSong:        (id: string) => Promise<void>;
@@ -31,7 +33,7 @@ const lyricsBadge = (song: Song) => {
 };
 
 export function SongLibrary({
-  songs, canEdit, queue, onSelectSong, onQueueSong, onDeleteSong, onEditSong,
+  songs, canEdit, queue, scrollToSongId, onSelectSong, onQueueSong, onDeleteSong, onEditSong,
   onTogglePlaylist, onClearLibrary, onUpdateLyrics, onAssignLyricsImage,
 }: SongLibraryProps) {
   const [query, setQuery]         = useState('');
@@ -39,6 +41,17 @@ export function SongLibrary({
   const [manualSong, setManualSong]     = useState<Song | null>(null);
   const [busyId, setBusyId]             = useState<string | null>(null);
   const [queuedFeedback, setQueuedFeedback] = useState<string | null>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
+
+  // On mount, jump back to the song the user was playing. The library unmounts
+  // while the player is open, so scroll position is lost — this restores it.
+  useEffect(() => {
+    if (!scrollToSongId) return;
+    gridRef.current
+      ?.querySelector(`[data-song-id="${scrollToSongId}"]`)
+      ?.scrollIntoView({ block: 'center' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const missingSongs = songs.filter(s => s.syncedLyrics.length === 0 && !s.lyrics.trim() && !s.lyricsImageUrl);
 
@@ -142,7 +155,7 @@ export function SongLibrary({
       </div>
 
       {/* ── Song grid ── */}
-      <div className="flex-1 overflow-y-auto">
+      <div ref={gridRef} className="flex-1 overflow-y-auto">
         {filtered.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center gap-4">
             <Music2 className="w-16 h-16 text-slate-700" />
@@ -170,6 +183,7 @@ export function SongLibrary({
               return (
                 <div
                   key={song.id}
+                  data-song-id={song.id}
                   className={`bg-slate-800 border rounded-xl transition-all group cursor-pointer relative overflow-hidden ${
                     justQueued
                       ? 'border-orange-500 shadow-[0_0_20px_rgba(249,115,22,0.2)]'
