@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from 'react';
 import Fuse from 'fuse.js';
 import {
   Search, Play, Trash2, Music2, Pencil, ListMusic, ListX,
-  Loader2, AlertTriangle, Plus,
+  Loader2, AlertTriangle, Plus, Download, Check, WifiOff,
 } from 'lucide-react';
 import type { Song } from '../App';
 import { MissingLyricsPanel } from './MissingLyricsPanel';
@@ -15,6 +15,13 @@ interface SongLibraryProps {
   queue: Song[];
   /** Scroll this song into view on mount (set when returning from the player) */
   scrollToSongId?: string | null;
+  /** True when running from the offline snapshot — only downloaded songs play */
+  offline?: boolean;
+  downloadedIds?: Set<string>;
+  downloadingIds?: Set<string>;
+  /** Present only in the native app — their absence hides all download UI */
+  onDownloadSong?:  (song: Song) => Promise<void> | void;
+  onRemoveDownload?: (id: string) => Promise<void> | void;
   onSelectSong:        (song: Song) => void;
   onQueueSong:         (song: Song) => void;
   onDeleteSong:        (id: string) => Promise<void>;
@@ -33,7 +40,10 @@ const lyricsBadge = (song: Song) => {
 };
 
 export function SongLibrary({
-  songs, canEdit, queue, scrollToSongId, onSelectSong, onQueueSong, onDeleteSong, onEditSong,
+  songs, canEdit, queue, scrollToSongId, offline = false,
+  downloadedIds = new Set(), downloadingIds = new Set(),
+  onDownloadSong, onRemoveDownload,
+  onSelectSong, onQueueSong, onDeleteSong, onEditSong,
   onTogglePlaylist, onClearLibrary, onUpdateLyrics, onAssignLyricsImage,
 }: SongLibraryProps) {
   const [query, setQuery]         = useState('');
@@ -97,12 +107,33 @@ export function SongLibrary({
   };
 
   const handleCardClick = (song: Song) => {
+    if (offline) {
+      // No server, no queue sync — play downloaded songs directly
+      if (downloadedIds.has(song.id)) onSelectSong(song);
+      return;
+    }
     if (canEdit) {
       onSelectSong(song);
     } else {
       onQueueSong(song);
       setQueuedFeedback(song.id);
       setTimeout(() => setQueuedFeedback(null), 1500);
+    }
+  };
+
+  // Download every playlist song that isn't already on the device
+  const [bulkDownloading, setBulkDownloading] = useState(false);
+  const pendingPlaylistCount = songs.filter(s => s.inPlaylist && !downloadedIds.has(s.id)).length;
+  const downloadPlaylist = async () => {
+    if (!onDownloadSong) return;
+    setBulkDownloading(true);
+    try {
+      for (const song of songs.filter(s => s.inPlaylist && !downloadedIds.has(s.id))) {
+        try { await onDownloadSong(song); }
+        catch (e) { console.warn(`Download failed for "${song.title}":`, e); }
+      }
+    } finally {
+      setBulkDownloading(false);
     }
   };
 
@@ -132,6 +163,29 @@ export function SongLibrary({
           <span className="text-xs text-slate-500 font-mono hidden sm:block">
             {filtered.length} found
           </span>
+        )}
+
+        {offline && (
+          <div className="flex items-center gap-2 px-4 py-3 bg-amber-900/20 border border-amber-500/30 rounded text-sm text-amber-300">
+            <WifiOff className="w-4 h-4 flex-shrink-0" />
+            <span>Offline — downloaded songs only</span>
+          </div>
+        )}
+
+        {onDownloadSong && !offline && pendingPlaylistCount > 0 && (
+          <button
+            onClick={downloadPlaylist}
+            disabled={bulkDownloading}
+            className="flex items-center gap-2 px-4 py-3 bg-slate-800 border border-slate-700 hover:border-orange-500/40 hover:text-orange-400 rounded text-sm text-slate-400 transition-colors disabled:opacity-60"
+          >
+            {bulkDownloading
+              ? <Loader2 className="w-4 h-4 animate-spin" />
+              : <Download className="w-4 h-4" />
+            }
+            <span className="hidden sm:inline">
+              {bulkDownloading ? 'Downloading…' : `Download playlist (${pendingPlaylistCount})`}
+            </span>
+          </button>
         )}
 
         {canEdit && songs.length > 0 && (
@@ -174,18 +228,25 @@ export function SongLibrary({
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 pb-4">
             {filtered.map(song => {
-              const badge      = lyricsBadge(song);
-              const inPlaylist = song.inPlaylist;
-              const isBusy     = busyId === song.id;
-              const isQueued   = queue.some(q => q.id === song.id);
-              const justQueued = queuedFeedback === song.id;
+              const badge        = lyricsBadge(song);
+              const inPlaylist   = song.inPlaylist;
+              const isBusy       = busyId === song.id;
+              const isQueued     = queue.some(q => q.id === song.id);
+              const justQueued   = queuedFeedback === song.id;
+              const isDownloaded = downloadedIds.has(song.id);
+              const isDownloading = downloadingIds.has(song.id);
+              const offlineUnplayable = offline && !isDownloaded;
 
               return (
                 <div
                   key={song.id}
                   data-song-id={song.id}
-                  className={`bg-slate-800 border rounded-xl transition-all group cursor-pointer relative overflow-hidden ${
-                    justQueued
+                  className={`bg-slate-800 border rounded-xl transition-all group relative overflow-hidden ${
+                    offlineUnplayable ? 'cursor-default' : 'cursor-pointer'
+                  } ${
+                    offlineUnplayable
+                      ? 'border-slate-700/40 opacity-30'
+                      : justQueued
                       ? 'border-orange-500 shadow-[0_0_20px_rgba(249,115,22,0.2)]'
                       : isQueued && !canEdit
                       ? 'border-orange-500/30'
@@ -219,6 +280,40 @@ export function SongLibrary({
                     <span className={`absolute bottom-2 left-2 text-[10px] px-2 py-0.5 rounded-full font-medium ${badge.cls}`}>
                       {badge.label}
                     </span>
+
+                    {onDownloadSong && !offline && (
+                      <button
+                        onClick={e => {
+                          e.stopPropagation();
+                          if (isDownloading) return;
+                          if (isDownloaded) onRemoveDownload?.(song.id);
+                          else onDownloadSong(song);
+                        }}
+                        className={`absolute top-2 left-2 w-11 h-11 flex items-center justify-center rounded-lg border transition-colors ${
+                          isDownloaded
+                            ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
+                            : 'bg-black/70 border-slate-600 text-slate-300 hover:text-white hover:border-slate-400'
+                        }`}
+                        title={
+                          isDownloading ? 'Downloading…'
+                          : isDownloaded ? 'Downloaded — tap to remove from device'
+                          : 'Download for offline'
+                        }
+                      >
+                        {isDownloading
+                          ? <Loader2 className="w-5 h-5 animate-spin" />
+                          : isDownloaded
+                          ? <Check className="w-5 h-5" />
+                          : <Download className="w-5 h-5" />
+                        }
+                      </button>
+                    )}
+
+                    {offline && isDownloaded && (
+                      <span className="absolute top-2 left-2 w-11 h-11 flex items-center justify-center rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-400">
+                        <Check className="w-5 h-5" />
+                      </span>
+                    )}
 
                     {!canEdit && isQueued && (
                       <span className="absolute bottom-2 right-2 text-[10px] px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/40 font-medium">

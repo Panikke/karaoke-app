@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { SongLibrary } from './components/SongLibrary';
 import { KaraokePlayer } from './components/KaraokePlayer';
 import { BulkUploadDialog } from './components/BulkUploadDialog';
@@ -21,6 +21,16 @@ import {
   deleteSongFromServer,
   clearLibraryOnServer,
 } from '../lib/songsApi';
+import {
+  isNative,
+  saveLibrarySnapshot,
+  loadLibrarySnapshot,
+  getDownloads,
+  downloadSong,
+  removeDownload,
+  withLocalMedia,
+  type DownloadedFiles,
+} from '../lib/offline';
 
 export interface Song {
   id: string;
@@ -64,14 +74,55 @@ export default function App() {
   const [loadError, setLoadError]     = useState<string | null>(null);
   const [showLogin, setShowLogin]     = useState(false);
   const [showAdmin, setShowAdmin]     = useState(false);
+  // Offline (APK only): true when the server is unreachable and we're running
+  // from the saved snapshot — downloaded songs still play from local files
+  const [offline, setOffline]         = useState(false);
+  const [downloads, setDownloads]     = useState<Record<string, DownloadedFiles>>({});
+  const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
 
   const { user, profile, loading: authLoading, isAdmin, canEditPlaylist, signOut } = useAuth();
 
   useEffect(() => {
+    if (isNative) getDownloads().then(setDownloads);
     fetchAllSongs()
-      .then(setSongs)
-      .catch(err => setLoadError(String(err)))
+      .then(fetched => {
+        setSongs(fetched);
+        saveLibrarySnapshot(fetched);
+      })
+      .catch(async err => {
+        // Server unreachable — fall back to the offline snapshot if we have one
+        const snapshot = await loadLibrarySnapshot();
+        if (snapshot) {
+          setSongs(snapshot);
+          setOffline(true);
+        } else {
+          setLoadError(String(err));
+        }
+      })
       .finally(() => setLoading(false));
+  }, []);
+
+  const downloadSongOffline = useCallback(async (song: Song) => {
+    setDownloadingIds(prev => new Set(prev).add(song.id));
+    try {
+      const files = await downloadSong(song);
+      setDownloads(prev => ({ ...prev, [song.id]: files }));
+    } finally {
+      setDownloadingIds(prev => {
+        const next = new Set(prev);
+        next.delete(song.id);
+        return next;
+      });
+    }
+  }, []);
+
+  const removeSongDownload = useCallback(async (songId: string) => {
+    await removeDownload(songId);
+    setDownloads(prev => {
+      const next = { ...prev };
+      delete next[songId];
+      return next;
+    });
   }, []);
 
   // Patron self-queue: adds to END (FIFO order)
@@ -172,7 +223,13 @@ export default function App() {
     }
   }, [songs]);
 
-  const playlist = songs.filter(s => s.inPlaylist);
+  const downloadedIds = useMemo(() => new Set(Object.keys(downloads)), [downloads]);
+  // Downloaded songs play from local files — required offline, instant online
+  const localSongs = useMemo(
+    () => songs.map(s => withLocalMedia(s, downloads)),
+    [songs, downloads],
+  );
+  const playlist = localSongs.filter(s => s.inPlaylist);
 
   if (loading || authLoading) {
     return (
@@ -309,10 +366,15 @@ export default function App() {
           </header>
 
           <SongLibrary
-            songs={songs}
+            songs={localSongs}
             canEdit={!!canEditPlaylist}
             queue={queue}
             scrollToSongId={returnToSongId}
+            offline={offline}
+            downloadedIds={downloadedIds}
+            downloadingIds={downloadingIds}
+            onDownloadSong={isNative ? downloadSongOffline : undefined}
+            onRemoveDownload={isNative ? removeSongDownload : undefined}
             onSelectSong={setCurrentSong}
             onQueueSong={addToQueue}
             onDeleteSong={deleteSong}
