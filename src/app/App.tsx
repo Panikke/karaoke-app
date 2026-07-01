@@ -7,7 +7,7 @@ import { EditSongDialog } from './components/EditSongDialog';
 import { LoginPage } from './components/LoginPage';
 import { AdminDashboard } from './components/AdminDashboard';
 import { ScanLibraryDialog } from './components/ScanLibraryDialog';
-import { Music, FolderUp, Images, ScrollText, LogIn, LogOut, Shield, Loader2, FolderSearch } from 'lucide-react';
+import { Music, FolderUp, Images, ScrollText, LogIn, LogOut, Shield, Loader2, FolderSearch, Play } from 'lucide-react';
 import type { LyricLine } from '../utils/lrcParser';
 import { useAuth } from './hooks/useAuth';
 import {
@@ -62,6 +62,8 @@ export interface SongUploadPayload {
 export default function App() {
   const [songs, setSongs]             = useState<Song[]>([]);
   const [currentSong, setCurrentSong] = useState<Song | null>(null);
+  // 'library' with a currentSong = browsing while music plays (player hidden, not unmounted)
+  const [view, setView]               = useState<'library' | 'player'>('library');
   const [queue, setQueue]             = useState<Song[]>([]);
   // Song to scroll back to when the library remounts after leaving the player
   const [returnToSongId, setReturnToSongId] = useState<string | null>(null);
@@ -130,6 +132,12 @@ export default function App() {
     setQueue(prev => [...prev.filter(q => q.id !== song.id), song]);
   }, []);
 
+  // Library tap → play this song and show the player
+  const openPlayer = useCallback((song: Song) => {
+    setCurrentSong(song);
+    setView('player');
+  }, []);
+
   const addSongs = useCallback(async (
     payloads: SongUploadPayload[],
     onProgress?: (done: number, total: number, filePct?: number) => void,
@@ -166,7 +174,7 @@ export default function App() {
   const deleteSong = useCallback(async (id: string) => {
     await deleteSongFromServer(id);
     setSongs(prev => prev.filter(s => s.id !== id));
-    if (currentSong?.id === id) setCurrentSong(null);
+    if (currentSong?.id === id) { setCurrentSong(null); setView('library'); }
   }, [currentSong]);
 
   const clearLibrary = useCallback(async () => {
@@ -261,18 +269,26 @@ export default function App() {
     );
   }
 
+  const inPlayer = currentSong !== null && view === 'player';
+
   return (
     <div className="size-full bg-slate-900 text-white">
-      {currentSong ? (
-        <KaraokePlayer
-          song={currentSong}
-          playlist={playlist}
-          queue={queue}
-          onQueueChange={setQueue}
-          onSelectSong={setCurrentSong}
-          onBack={() => { setReturnToSongId(currentSong.id); setCurrentSong(null); }}
-        />
-      ) : (
+      {/* The player stays MOUNTED while browsing the library so its <audio>
+          element keeps playing — unmounting would orphan a still-playing
+          element in the webview and a reopened player would double up. */}
+      {currentSong && (
+        <div className={inPlayer ? 'size-full' : 'hidden'}>
+          <KaraokePlayer
+            song={currentSong}
+            playlist={playlist}
+            queue={queue}
+            onQueueChange={setQueue}
+            onSelectSong={setCurrentSong}
+            onBack={() => { setReturnToSongId(currentSong.id); setView('library'); }}
+          />
+        </div>
+      )}
+      {!inPlayer && (
         <div className="size-full flex flex-col">
           {/* ── Header ── */}
           <header className="bg-slate-900 border-b border-slate-700 px-6 py-4 flex-shrink-0">
@@ -375,7 +391,8 @@ export default function App() {
             downloadingIds={downloadingIds}
             onDownloadSong={isNative ? downloadSongOffline : undefined}
             onRemoveDownload={isNative ? removeSongDownload : undefined}
-            onSelectSong={setCurrentSong}
+            nowPlayingId={currentSong?.id ?? null}
+            onSelectSong={openPlayer}
             onQueueSong={addToQueue}
             onDeleteSong={deleteSong}
             onEditSong={setEditingSong}
@@ -384,6 +401,27 @@ export default function App() {
             onUpdateLyrics={updateLyrics}
             onAssignLyricsImage={updateLyricsImageFn}
           />
+
+          {/* ── Now-playing bar — the way back into the player ── */}
+          {currentSong && (
+            <button
+              onClick={() => setView('player')}
+              className="flex items-center gap-3 mx-4 mb-4 px-4 py-3 min-h-[56px] bg-slate-800 border border-orange-500/40 hover:border-orange-500 rounded-xl transition-colors text-left flex-shrink-0"
+            >
+              {currentSong.coverArtUrl
+                ? <img src={currentSong.coverArtUrl} alt="" className="w-10 h-10 rounded object-cover flex-shrink-0" />
+                : <span className="w-10 h-10 rounded bg-slate-900 flex items-center justify-center text-slate-600 flex-shrink-0">♪</span>
+              }
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium text-white">{currentSong.title}</div>
+                <div className="truncate text-xs text-slate-400">{currentSong.artist}</div>
+              </div>
+              <span className="flex items-center gap-2 text-xs text-orange-400 flex-shrink-0">
+                <Play className="w-4 h-4" />
+                <span className="hidden sm:inline">Open player</span>
+              </span>
+            </button>
+          )}
         </div>
       )}
 

@@ -16,6 +16,8 @@ interface SongLibraryProps {
   queue: Song[];
   /** Scroll this song into view on mount (set when returning from the player) */
   scrollToSongId?: string | null;
+  /** Song currently loaded in the (hidden) player — taps queue instead of replacing it */
+  nowPlayingId?: string | null;
   /** True when running from the offline snapshot — only downloaded songs play */
   offline?: boolean;
   downloadedIds?: Set<string>;
@@ -46,7 +48,7 @@ const lyricsBadge = (song: Song) => {
 };
 
 export function SongLibrary({
-  songs, canEdit, queue, scrollToSongId, offline = false,
+  songs, canEdit, queue, scrollToSongId, nowPlayingId = null, offline = false,
   downloadedIds = new Set(), downloadingIds = new Set(),
   onDownloadSong, onRemoveDownload,
   onSelectSong, onQueueSong, onDeleteSong, onEditSong,
@@ -112,19 +114,27 @@ export function SongLibrary({
     try { await onTogglePlaylist(id); } finally { setBusyId(null); }
   };
 
+  const queueWithFeedback = (song: Song) => {
+    onQueueSong(song);
+    setQueuedFeedback(song.id);
+    setTimeout(() => setQueuedFeedback(null), 1500);
+  };
+
   const handleCardClick = (song: Song) => {
-    if (offline) {
-      // No server, no queue sync — play downloaded songs directly
-      if (downloadedIds.has(song.id)) onSelectSong(song);
+    if (offline && !downloadedIds.has(song.id)) return; // not on this device
+    // Tapping the playing song reopens the player
+    if (nowPlayingId === song.id) {
+      onSelectSong(song);
       return;
     }
-    if (canEdit) {
-      onSelectSong(song);
-    } else {
-      onQueueSong(song);
-      setQueuedFeedback(song.id);
-      setTimeout(() => setQueuedFeedback(null), 1500);
+    // Something else is playing — don't interrupt it, queue this one
+    // (the queue is client-side state, so this works offline too)
+    if (nowPlayingId) {
+      queueWithFeedback(song);
+      return;
     }
+    if (canEdit || offline) onSelectSong(song);
+    else queueWithFeedback(song);
   };
 
   // Download every playlist song that isn't already on the device
@@ -338,13 +348,18 @@ export function SongLibrary({
                       </span>
                     )}
 
-                    {!canEdit && isQueued && (
+                    {isQueued && (
                       <span className="absolute bottom-2 right-2 text-[10px] px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/40 font-medium">
                         Queued
                       </span>
                     )}
+                    {nowPlayingId === song.id && (
+                      <span className="absolute bottom-2 right-2 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-medium">
+                        Playing
+                      </span>
+                    )}
 
-                    {canEdit && !inPlaylist && (
+                    {canEdit && !inPlaylist && !isQueued && nowPlayingId !== song.id && (
                       <span className="absolute bottom-2 right-2 text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-500 border border-slate-700">
                         off
                       </span>
