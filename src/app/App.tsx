@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { SongLibrary } from './components/SongLibrary';
 import { KaraokePlayer } from './components/KaraokePlayer';
 import { BulkUploadDialog } from './components/BulkUploadDialog';
@@ -7,7 +7,7 @@ import { EditSongDialog } from './components/EditSongDialog';
 import { LoginPage } from './components/LoginPage';
 import { AdminDashboard } from './components/AdminDashboard';
 import { ScanLibraryDialog } from './components/ScanLibraryDialog';
-import { Music, FolderUp, Images, ScrollText, LogIn, LogOut, Shield, Loader2, FolderSearch } from 'lucide-react';
+import { Music, FolderUp, Images, ScrollText, LogIn, LogOut, Shield, Loader2, FolderSearch, Play } from 'lucide-react';
 import type { LyricLine } from '../utils/lrcParser';
 import { useAuth } from './hooks/useAuth';
 import {
@@ -21,6 +21,16 @@ import {
   deleteSongFromServer,
   clearLibraryOnServer,
 } from '../lib/songsApi';
+import {
+  isNative,
+  saveLibrarySnapshot,
+  loadLibrarySnapshot,
+  getDownloads,
+  downloadSong,
+  removeDownload,
+  withLocalMedia,
+  type DownloadedFiles,
+} from '../lib/offline';
 
 export interface Song {
   id: string;
@@ -52,7 +62,11 @@ export interface SongUploadPayload {
 export default function App() {
   const [songs, setSongs]             = useState<Song[]>([]);
   const [currentSong, setCurrentSong] = useState<Song | null>(null);
+  // 'library' with a currentSong = browsing while music plays (player hidden, not unmounted)
+  const [view, setView]               = useState<'library' | 'player'>('library');
   const [queue, setQueue]             = useState<Song[]>([]);
+  // Song to scroll back to when the library remounts after leaving the player
+  const [returnToSongId, setReturnToSongId] = useState<string | null>(null);
   const [showBulkUpload, setShowBulkUpload]             = useState(false);
   const [showBulkImages, setShowBulkImages]             = useState(false);
   const [showBulkLyricsImages, setShowBulkLyricsImages] = useState(false);
@@ -62,19 +76,66 @@ export default function App() {
   const [loadError, setLoadError]     = useState<string | null>(null);
   const [showLogin, setShowLogin]     = useState(false);
   const [showAdmin, setShowAdmin]     = useState(false);
+  // Offline (APK only): true when the server is unreachable and we're running
+  // from the saved snapshot — downloaded songs still play from local files
+  const [offline, setOffline]         = useState(false);
+  const [downloads, setDownloads]     = useState<Record<string, DownloadedFiles>>({});
+  const [downloadingIds, setDownloadingIds] = useState<Set<string>>(new Set());
 
   const { user, profile, loading: authLoading, isAdmin, canEditPlaylist, signOut } = useAuth();
 
   useEffect(() => {
+    if (isNative) getDownloads().then(setDownloads);
     fetchAllSongs()
-      .then(setSongs)
-      .catch(err => setLoadError(String(err)))
+      .then(fetched => {
+        setSongs(fetched);
+        saveLibrarySnapshot(fetched);
+      })
+      .catch(async err => {
+        // Server unreachable — fall back to the offline snapshot if we have one
+        const snapshot = await loadLibrarySnapshot();
+        if (snapshot) {
+          setSongs(snapshot);
+          setOffline(true);
+        } else {
+          setLoadError(String(err));
+        }
+      })
       .finally(() => setLoading(false));
+  }, []);
+
+  const downloadSongOffline = useCallback(async (song: Song) => {
+    setDownloadingIds(prev => new Set(prev).add(song.id));
+    try {
+      const files = await downloadSong(song);
+      setDownloads(prev => ({ ...prev, [song.id]: files }));
+    } finally {
+      setDownloadingIds(prev => {
+        const next = new Set(prev);
+        next.delete(song.id);
+        return next;
+      });
+    }
+  }, []);
+
+  const removeSongDownload = useCallback(async (songId: string) => {
+    await removeDownload(songId);
+    setDownloads(prev => {
+      const next = { ...prev };
+      delete next[songId];
+      return next;
+    });
   }, []);
 
   // Patron self-queue: adds to END (FIFO order)
   const addToQueue = useCallback((song: Song) => {
     setQueue(prev => [...prev.filter(q => q.id !== song.id), song]);
+  }, []);
+
+  // Library tap → play this song and show the player
+  const openPlayer = useCallback((song: Song) => {
+    setCurrentSong(song);
+    setView('player');
   }, []);
 
   const addSongs = useCallback(async (
@@ -113,7 +174,7 @@ export default function App() {
   const deleteSong = useCallback(async (id: string) => {
     await deleteSongFromServer(id);
     setSongs(prev => prev.filter(s => s.id !== id));
-    if (currentSong?.id === id) setCurrentSong(null);
+    if (currentSong?.id === id) { setCurrentSong(null); setView('library'); }
   }, [currentSong]);
 
   const clearLibrary = useCallback(async () => {
@@ -170,7 +231,13 @@ export default function App() {
     }
   }, [songs]);
 
-  const playlist = songs.filter(s => s.inPlaylist);
+  const downloadedIds = useMemo(() => new Set(Object.keys(downloads)), [downloads]);
+  // Downloaded songs play from local files — required offline, instant online
+  const localSongs = useMemo(
+    () => songs.map(s => withLocalMedia(s, downloads)),
+    [songs, downloads],
+  );
+  const playlist = localSongs.filter(s => s.inPlaylist);
 
   if (loading || authLoading) {
     return (
@@ -202,18 +269,26 @@ export default function App() {
     );
   }
 
+  const inPlayer = currentSong !== null && view === 'player';
+
   return (
     <div className="size-full bg-slate-900 text-white">
-      {currentSong ? (
-        <KaraokePlayer
-          song={currentSong}
-          playlist={playlist}
-          queue={queue}
-          onQueueChange={setQueue}
-          onSelectSong={setCurrentSong}
-          onBack={() => setCurrentSong(null)}
-        />
-      ) : (
+      {/* The player stays MOUNTED while browsing the library so its <audio>
+          element keeps playing — unmounting would orphan a still-playing
+          element in the webview and a reopened player would double up. */}
+      {currentSong && (
+        <div className={inPlayer ? 'size-full' : 'hidden'}>
+          <KaraokePlayer
+            song={currentSong}
+            playlist={playlist}
+            queue={queue}
+            onQueueChange={setQueue}
+            onSelectSong={setCurrentSong}
+            onBack={() => { setReturnToSongId(currentSong.id); setView('library'); }}
+          />
+        </div>
+      )}
+      {!inPlayer && (
         <div className="size-full flex flex-col">
           {/* ── Header ── */}
           <header className="bg-slate-900 border-b border-slate-700 px-6 py-4 flex-shrink-0">
@@ -307,10 +382,17 @@ export default function App() {
           </header>
 
           <SongLibrary
-            songs={songs}
+            songs={localSongs}
             canEdit={!!canEditPlaylist}
             queue={queue}
-            onSelectSong={setCurrentSong}
+            scrollToSongId={returnToSongId}
+            offline={offline}
+            downloadedIds={downloadedIds}
+            downloadingIds={downloadingIds}
+            onDownloadSong={isNative ? downloadSongOffline : undefined}
+            onRemoveDownload={isNative ? removeSongDownload : undefined}
+            nowPlayingId={currentSong?.id ?? null}
+            onSelectSong={openPlayer}
             onQueueSong={addToQueue}
             onDeleteSong={deleteSong}
             onEditSong={setEditingSong}
@@ -319,6 +401,27 @@ export default function App() {
             onUpdateLyrics={updateLyrics}
             onAssignLyricsImage={updateLyricsImageFn}
           />
+
+          {/* ── Now-playing bar — the way back into the player ── */}
+          {currentSong && (
+            <button
+              onClick={() => setView('player')}
+              className="flex items-center gap-3 mx-4 mb-4 px-4 py-3 min-h-[56px] bg-slate-800 border border-orange-500/40 hover:border-orange-500 rounded-xl transition-colors text-left flex-shrink-0"
+            >
+              {currentSong.coverArtUrl
+                ? <img src={currentSong.coverArtUrl} alt="" className="w-10 h-10 rounded object-cover flex-shrink-0" />
+                : <span className="w-10 h-10 rounded bg-slate-900 flex items-center justify-center text-slate-600 flex-shrink-0">♪</span>
+              }
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium text-white">{currentSong.title}</div>
+                <div className="truncate text-xs text-slate-400">{currentSong.artist}</div>
+              </div>
+              <span className="flex items-center gap-2 text-xs text-orange-400 flex-shrink-0">
+                <Play className="w-4 h-4" />
+                <span className="hidden sm:inline">Open player</span>
+              </span>
+            </button>
+          )}
         </div>
       )}
 

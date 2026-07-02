@@ -9,6 +9,17 @@ server/node_modules/
 
 # Safe to commit — example template only
 !.env.example
+# Safe to commit — only the public server URL, no secrets
+!.env.capacitor
+
+# Capacitor / Android build artifacts
+android/app/build/
+android/build/
+android/.gradle/
+android/local.properties
+android/app/release/
+*.apk
+*.aab
 
 # OS
 .DS_Store

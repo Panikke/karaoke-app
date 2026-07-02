@@ -4,11 +4,14 @@
  */
 
 import { supabase } from './supabase';
+import { API_BASE } from './config';
 import type { Song } from '../app/App';
 import type { LyricLine } from '../utils/lrcParser';
 
-// Audio files are served by nginx from the Pi filesystem
-const AUDIO_BASE = '/audio';
+// Audio files are served by nginx from the Pi filesystem.
+// API_BASE is '' for the web build (relative, same-origin) and the absolute
+// server URL for the Capacitor/APK build.
+const AUDIO_BASE = `${API_BASE}/audio`;
 
 // ── DB shape ──────────────────────────────────────────────────────────────────
 interface DbSong {
@@ -165,7 +168,7 @@ export async function uploadSongToServer(
     }]),
   );
 
-  const data = await xhrPost('/api/songs/upload', form, token, onProgress);
+  const data = await xhrPost(`${API_BASE}/api/songs/upload`, form, token, onProgress);
   if (!data.songs?.length) throw new Error(data.error || 'Upload failed');
   const { songs } = data;
   const created: Song = dbToSong(songs[0] as DbSong);
@@ -191,7 +194,7 @@ export async function uploadCoverArt(
   const form = new FormData();
   form.append('image', imageFile);
 
-  const res = await fetch(`/api/songs/${songId}/cover`, {
+  const res = await fetch(`${API_BASE}/api/songs/${songId}/cover`, {
     method:  'POST',
     headers: { Authorization: `Bearer ${t}` },
     body:    form,
@@ -213,7 +216,7 @@ export async function uploadLyricsImage(
   const form = new FormData();
   form.append('image', imageFile);
 
-  const res = await fetch(`/api/songs/${songId}/lyrics-image`, {
+  const res = await fetch(`${API_BASE}/api/songs/${songId}/lyrics-image`, {
     method:  'POST',
     headers: { Authorization: `Bearer ${t}` },
     body:    form,
@@ -228,7 +231,7 @@ export async function uploadLyricsImage(
 
 export async function deleteSongFromServer(songId: string): Promise<void> {
   const token = await getToken();
-  const res = await fetch(`/api/songs/${songId}`, {
+  const res = await fetch(`${API_BASE}/api/songs/${songId}`, {
     method:  'DELETE',
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -240,7 +243,7 @@ export async function deleteSongFromServer(songId: string): Promise<void> {
 
 export async function clearLibraryOnServer(): Promise<void> {
   const token = await getToken();
-  const res = await fetch('/api/songs', {
+  const res = await fetch(`${API_BASE}/api/songs`, {
     method:  'DELETE',
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -262,7 +265,7 @@ export interface IncomingFile {
 
 export async function listIncomingFiles(): Promise<{ files: IncomingFile[]; incomingPath: string }> {
   const token = await getToken();
-  const res = await fetch('/api/library/incoming', {
+  const res = await fetch(`${API_BASE}/api/library/incoming`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) {
@@ -274,7 +277,7 @@ export async function listIncomingFiles(): Promise<{ files: IncomingFile[]; inco
 
 export async function getSyncConfig(): Promise<{ configured: boolean; remote: string | null }> {
   const token = await getToken();
-  const res = await fetch('/api/library/sync-config', {
+  const res = await fetch(`${API_BASE}/api/library/sync-config`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) return { configured: false, remote: null };
@@ -283,7 +286,7 @@ export async function getSyncConfig(): Promise<{ configured: boolean; remote: st
 
 export async function syncFromCloud(): Promise<{ ok: boolean; fileCount: number }> {
   const token = await getToken();
-  const res = await fetch('/api/library/sync', {
+  const res = await fetch(`${API_BASE}/api/library/sync`, {
     method:  'POST',
     headers: { Authorization: `Bearer ${token}` },
   });
@@ -299,7 +302,7 @@ export async function scanLibrary(
   filenames?: string[],
 ): Promise<{ imported: Song[]; failed: { filename: string; error: string }[]; totalProcessed: number }> {
   const token = await getToken();
-  const res = await fetch('/api/library/scan', {
+  const res = await fetch(`${API_BASE}/api/library/scan`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

@@ -1,10 +1,11 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import Fuse from 'fuse.js';
 import {
   Search, Play, Trash2, Music2, Pencil, ListMusic, ListX,
-  Loader2, AlertTriangle, Plus,
+  Loader2, AlertTriangle, Plus, Download, Check, WifiOff,
 } from 'lucide-react';
 import type { Song } from '../App';
+import { downloadsSizeBytes } from '../../lib/offline';
 import { MissingLyricsPanel } from './MissingLyricsPanel';
 import { ManualLyricsDialog } from './ManualLyricsDialog';
 import type { LyricLine } from '../../utils/lrcParser';
@@ -13,6 +14,17 @@ interface SongLibraryProps {
   songs: Song[];
   canEdit: boolean;
   queue: Song[];
+  /** Scroll this song into view on mount (set when returning from the player) */
+  scrollToSongId?: string | null;
+  /** Song currently loaded in the (hidden) player — taps queue instead of replacing it */
+  nowPlayingId?: string | null;
+  /** True when running from the offline snapshot — only downloaded songs play */
+  offline?: boolean;
+  downloadedIds?: Set<string>;
+  downloadingIds?: Set<string>;
+  /** Present only in the native app — their absence hides all download UI */
+  onDownloadSong?:  (song: Song) => Promise<void> | void;
+  onRemoveDownload?: (id: string) => Promise<void> | void;
   onSelectSong:        (song: Song) => void;
   onQueueSong:         (song: Song) => void;
   onDeleteSong:        (id: string) => Promise<void>;
@@ -23,6 +35,11 @@ interface SongLibraryProps {
   onAssignLyricsImage: (songId: string, file: File) => Promise<void>;
 }
 
+const fmtBytes = (n: number) =>
+  n >= 1_073_741_824 ? `${(n / 1_073_741_824).toFixed(1)} GB`
+  : n >= 1_048_576   ? `${Math.round(n / 1_048_576)} MB`
+  : `${Math.max(1, Math.round(n / 1024))} KB`;
+
 const lyricsBadge = (song: Song) => {
   if (song.syncedLyrics.length > 0) return { label: 'Synced', cls: 'bg-blue-500/15 text-blue-400 border border-blue-500/30' };
   if (song.lyrics.trim())           return { label: 'Lyrics', cls: 'bg-slate-700/60 text-slate-300 border border-slate-600' };
@@ -31,7 +48,10 @@ const lyricsBadge = (song: Song) => {
 };
 
 export function SongLibrary({
-  songs, canEdit, queue, onSelectSong, onQueueSong, onDeleteSong, onEditSong,
+  songs, canEdit, queue, scrollToSongId, nowPlayingId = null, offline = false,
+  downloadedIds = new Set(), downloadingIds = new Set(),
+  onDownloadSong, onRemoveDownload,
+  onSelectSong, onQueueSong, onDeleteSong, onEditSong,
   onTogglePlaylist, onClearLibrary, onUpdateLyrics, onAssignLyricsImage,
 }: SongLibraryProps) {
   const [query, setQuery]         = useState('');
@@ -39,6 +59,17 @@ export function SongLibrary({
   const [manualSong, setManualSong]     = useState<Song | null>(null);
   const [busyId, setBusyId]             = useState<string | null>(null);
   const [queuedFeedback, setQueuedFeedback] = useState<string | null>(null);
+  const gridRef = useRef<HTMLDivElement>(null);
+
+  // On mount, jump back to the song the user was playing. The library unmounts
+  // while the player is open, so scroll position is lost — this restores it.
+  useEffect(() => {
+    if (!scrollToSongId) return;
+    gridRef.current
+      ?.querySelector(`[data-song-id="${scrollToSongId}"]`)
+      ?.scrollIntoView({ block: 'center' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const missingSongs = songs.filter(s => s.syncedLyrics.length === 0 && !s.lyrics.trim() && !s.lyricsImageUrl);
 
@@ -83,15 +114,53 @@ export function SongLibrary({
     try { await onTogglePlaylist(id); } finally { setBusyId(null); }
   };
 
+  const queueWithFeedback = (song: Song) => {
+    onQueueSong(song);
+    setQueuedFeedback(song.id);
+    setTimeout(() => setQueuedFeedback(null), 1500);
+  };
+
   const handleCardClick = (song: Song) => {
-    if (canEdit) {
+    if (offline && !downloadedIds.has(song.id)) return; // not on this device
+    // Tapping the playing song reopens the player
+    if (nowPlayingId === song.id) {
       onSelectSong(song);
-    } else {
-      onQueueSong(song);
-      setQueuedFeedback(song.id);
-      setTimeout(() => setQueuedFeedback(null), 1500);
+      return;
+    }
+    // Something else is playing — don't interrupt it, queue this one
+    // (the queue is client-side state, so this works offline too)
+    if (nowPlayingId) {
+      queueWithFeedback(song);
+      return;
+    }
+    // Nothing is playing — a tap always starts playback; queueing into a
+    // player that isn't open would just pile up songs nobody can start
+    onSelectSong(song);
+  };
+
+  // Download every playlist song that isn't already on the device
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
+  const pendingPlaylistCount = songs.filter(s => s.inPlaylist && !downloadedIds.has(s.id)).length;
+  const downloadPlaylist = async () => {
+    if (!onDownloadSong) return;
+    const pending = songs.filter(s => s.inPlaylist && !downloadedIds.has(s.id));
+    setBulkProgress({ done: 0, total: pending.length });
+    try {
+      for (let i = 0; i < pending.length; i++) {
+        try { await onDownloadSong(pending[i]); }
+        catch (e) { console.warn(`Download failed for "${pending[i].title}":`, e); }
+        setBulkProgress({ done: i + 1, total: pending.length });
+      }
+    } finally {
+      setBulkProgress(null);
     }
   };
+
+  // Storage used by downloads — native only, refreshed as downloads change
+  const [storageBytes, setStorageBytes] = useState(0);
+  useEffect(() => {
+    if (onDownloadSong) downloadsSizeBytes().then(setStorageBytes);
+  }, [downloadedIds, onDownloadSong]);
 
   return (
     <div className="flex-1 overflow-hidden flex flex-col p-4 gap-3 bg-slate-900">
@@ -121,6 +190,38 @@ export function SongLibrary({
           </span>
         )}
 
+        {offline && (
+          <div className="flex items-center gap-2 px-4 py-3 bg-amber-900/20 border border-amber-500/30 rounded text-sm text-amber-300">
+            <WifiOff className="w-4 h-4 flex-shrink-0" />
+            <span>Offline — downloaded songs only</span>
+          </div>
+        )}
+
+        {onDownloadSong && !offline && (pendingPlaylistCount > 0 || bulkProgress) && (
+          <button
+            onClick={downloadPlaylist}
+            disabled={!!bulkProgress}
+            className="flex items-center gap-2 px-4 py-3 bg-slate-800 border border-slate-700 hover:border-orange-500/40 hover:text-orange-400 rounded text-sm text-slate-400 transition-colors disabled:opacity-60"
+          >
+            {bulkProgress
+              ? <Loader2 className="w-4 h-4 animate-spin" />
+              : <Download className="w-4 h-4" />
+            }
+            <span>
+              {bulkProgress
+                ? `Downloading ${bulkProgress.done} of ${bulkProgress.total}…`
+                : `Download playlist (${pendingPlaylistCount})`
+              }
+            </span>
+          </button>
+        )}
+
+        {onDownloadSong && storageBytes > 0 && (
+          <span className="text-xs text-slate-500 font-mono whitespace-nowrap" title="Storage used by downloaded songs">
+            {fmtBytes(storageBytes)} on device
+          </span>
+        )}
+
         {canEdit && songs.length > 0 && (
           confirmClear ? (
             <div className="flex items-center gap-2 px-4 py-3 bg-red-900/20 border border-red-500/30 rounded text-sm">
@@ -142,7 +243,7 @@ export function SongLibrary({
       </div>
 
       {/* ── Song grid ── */}
-      <div className="flex-1 overflow-y-auto">
+      <div ref={gridRef} className="flex-1 overflow-y-auto">
         {filtered.length === 0 ? (
           <div className="h-full flex flex-col items-center justify-center gap-4">
             <Music2 className="w-16 h-16 text-slate-700" />
@@ -161,17 +262,25 @@ export function SongLibrary({
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 pb-4">
             {filtered.map(song => {
-              const badge      = lyricsBadge(song);
-              const inPlaylist = song.inPlaylist;
-              const isBusy     = busyId === song.id;
-              const isQueued   = queue.some(q => q.id === song.id);
-              const justQueued = queuedFeedback === song.id;
+              const badge        = lyricsBadge(song);
+              const inPlaylist   = song.inPlaylist;
+              const isBusy       = busyId === song.id;
+              const isQueued     = queue.some(q => q.id === song.id);
+              const justQueued   = queuedFeedback === song.id;
+              const isDownloaded = downloadedIds.has(song.id);
+              const isDownloading = downloadingIds.has(song.id);
+              const offlineUnplayable = offline && !isDownloaded;
 
               return (
                 <div
                   key={song.id}
-                  className={`bg-slate-800 border rounded-xl transition-all group cursor-pointer relative overflow-hidden ${
-                    justQueued
+                  data-song-id={song.id}
+                  className={`bg-slate-800 border rounded-xl transition-all group relative overflow-hidden ${
+                    offlineUnplayable ? 'cursor-default' : 'cursor-pointer'
+                  } ${
+                    offlineUnplayable
+                      ? 'border-slate-700/40 opacity-30'
+                      : justQueued
                       ? 'border-orange-500 shadow-[0_0_20px_rgba(249,115,22,0.2)]'
                       : isQueued && !canEdit
                       ? 'border-orange-500/30'
@@ -206,13 +315,52 @@ export function SongLibrary({
                       {badge.label}
                     </span>
 
-                    {!canEdit && isQueued && (
+                    {onDownloadSong && !offline && (
+                      <button
+                        onClick={e => {
+                          e.stopPropagation();
+                          if (isDownloading) return;
+                          if (isDownloaded) onRemoveDownload?.(song.id);
+                          else onDownloadSong(song);
+                        }}
+                        className={`absolute top-2 left-2 w-11 h-11 flex items-center justify-center rounded-lg border transition-colors ${
+                          isDownloaded
+                            ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
+                            : 'bg-black/70 border-slate-600 text-slate-300 hover:text-white hover:border-slate-400'
+                        }`}
+                        title={
+                          isDownloading ? 'Downloading…'
+                          : isDownloaded ? 'Downloaded — tap to remove from device'
+                          : 'Download for offline'
+                        }
+                      >
+                        {isDownloading
+                          ? <Loader2 className="w-5 h-5 animate-spin" />
+                          : isDownloaded
+                          ? <Check className="w-5 h-5" />
+                          : <Download className="w-5 h-5" />
+                        }
+                      </button>
+                    )}
+
+                    {offline && isDownloaded && (
+                      <span className="absolute top-2 left-2 w-11 h-11 flex items-center justify-center rounded-lg bg-emerald-500/20 border border-emerald-500/40 text-emerald-400">
+                        <Check className="w-5 h-5" />
+                      </span>
+                    )}
+
+                    {isQueued && (
                       <span className="absolute bottom-2 right-2 text-[10px] px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-400 border border-orange-500/40 font-medium">
                         Queued
                       </span>
                     )}
+                    {nowPlayingId === song.id && (
+                      <span className="absolute bottom-2 right-2 text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 font-medium">
+                        Playing
+                      </span>
+                    )}
 
-                    {canEdit && !inPlaylist && (
+                    {canEdit && !inPlaylist && !isQueued && nowPlayingId !== song.id && (
                       <span className="absolute bottom-2 right-2 text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-500 border border-slate-700">
                         off
                       </span>

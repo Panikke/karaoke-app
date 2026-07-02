@@ -1,0 +1,8 @@
+{
+  "appId": "uk.co.danserv.karaoke",
+  "appName": "Karaoke",
+  "webDir": "dist",
+  "android": {
+    "allowMixedContent": false
+  }
+}
