@@ -133,8 +133,9 @@ export function SongLibrary({
       queueWithFeedback(song);
       return;
     }
-    if (canEdit || offline) onSelectSong(song);
-    else queueWithFeedback(song);
+    // Nothing is playing — a tap always starts playback; queueing into a
+    // player that isn't open would just pile up songs nobody can start
+    onSelectSong(song);
   };
 
   // Download every playlist song that isn't already on the device
