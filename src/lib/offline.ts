@@ -80,12 +80,27 @@ const extOf = (url: string) => {
   return m ? m[1].toLowerCase() : 'bin';
 };
 
+async function ensureDir(path: string): Promise<void> {
+  try {
+    await Filesystem.mkdir({ path, directory: DIR, recursive: true });
+  } catch (e: any) {
+    // "Directory exists" is fine; anything else will surface on the write
+    if (!/exist/i.test(String(e?.message ?? e))) console.warn('mkdir failed:', e);
+  }
+}
+
 async function downloadOne(url: string, path: string): Promise<string> {
-  const res = await Filesystem.downloadFile({
-    url, path, directory: DIR, recursive: true,
-  });
-  if (!res.path) throw new Error(`Download produced no file: ${url}`);
-  return res.path;
+  try {
+    await Filesystem.downloadFile({ url, path, directory: DIR, recursive: true });
+    // Trust nothing: confirm the file exists and has bytes
+    const st = await Filesystem.stat({ path, directory: DIR });
+    if (!st.size) throw new Error('file is empty after download');
+    // Deterministic absolute URI for convertFileSrc (res.path shape varies)
+    const { uri } = await Filesystem.getUri({ path, directory: DIR });
+    return uri;
+  } catch (e: any) {
+    throw new Error(`${e?.message ?? e} (url: ${url})`);
+  }
 }
 
 /** Download a song's audio (+ cover, lyrics image) for offline playback. */
@@ -93,6 +108,9 @@ export async function downloadSong(song: Song): Promise<DownloadedFiles> {
   if (!isNative) throw new Error('Downloads are only available in the app');
 
   const base = `${ROOT}/${song.id}`;
+  // downloadFile's `recursive` handling has been flaky across plugin
+  // versions on Android — create the folder ourselves first
+  await ensureDir(base);
   const files: DownloadedFiles = {
     audio: await downloadOne(song.audioUrl, `${base}/audio.${extOf(song.audioUrl)}`),
   };

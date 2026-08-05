@@ -139,21 +139,41 @@ export function SongLibrary({
   };
 
   // Download every playlist song that isn't already on the device
-  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number } | null>(null);
+  const [bulkProgress, setBulkProgress] = useState<{ done: number; total: number; failed: number } | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const pendingPlaylistCount = songs.filter(s => s.inPlaylist && !downloadedIds.has(s.id)).length;
   const downloadPlaylist = async () => {
     if (!onDownloadSong) return;
     const pending = songs.filter(s => s.inPlaylist && !downloadedIds.has(s.id));
-    setBulkProgress({ done: 0, total: pending.length });
+    setDownloadError(null);
+    let failed = 0;
+    let firstError: string | null = null;
+    setBulkProgress({ done: 0, total: pending.length, failed });
     try {
       for (let i = 0; i < pending.length; i++) {
-        try { await onDownloadSong(pending[i]); }
-        catch (e) { console.warn(`Download failed for "${pending[i].title}":`, e); }
-        setBulkProgress({ done: i + 1, total: pending.length });
+        try {
+          await onDownloadSong(pending[i]);
+        } catch (e: any) {
+          failed++;
+          if (!firstError) firstError = String(e?.message ?? e);
+          // If nothing works, stop burning through the whole list
+          if (failed >= 5 && failed === i + 1) break;
+        }
+        setBulkProgress({ done: i + 1, total: pending.length, failed });
       }
     } finally {
       setBulkProgress(null);
+      if (failed > 0) {
+        setDownloadError(`${failed} download${failed > 1 ? 's' : ''} failed — ${firstError}`);
+      }
     }
+  };
+
+  const downloadOneSong = async (song: Song) => {
+    if (!onDownloadSong) return;
+    setDownloadError(null);
+    try { await onDownloadSong(song); }
+    catch (e: any) { setDownloadError(`"${song.title}" failed — ${String(e?.message ?? e)}`); }
   };
 
   // Storage used by downloads — native only, refreshed as downloads change
@@ -209,11 +229,19 @@ export function SongLibrary({
             }
             <span>
               {bulkProgress
-                ? `Downloading ${bulkProgress.done} of ${bulkProgress.total}…`
+                ? `Downloading ${bulkProgress.done} of ${bulkProgress.total}…${bulkProgress.failed ? ` (${bulkProgress.failed} failed)` : ''}`
                 : `Download playlist (${pendingPlaylistCount})`
               }
             </span>
           </button>
+        )}
+
+        {downloadError && (
+          <div className="w-full flex items-center gap-2 px-4 py-2 bg-red-900/20 border border-red-500/30 rounded text-xs text-red-300">
+            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+            <span className="min-w-0 break-all">{downloadError}</span>
+            <button onClick={() => setDownloadError(null)} className="ml-auto text-red-400 hover:text-white text-lg leading-none flex-shrink-0">×</button>
+          </div>
         )}
 
         {onDownloadSong && storageBytes > 0 && (
@@ -321,7 +349,7 @@ export function SongLibrary({
                           e.stopPropagation();
                           if (isDownloading) return;
                           if (isDownloaded) onRemoveDownload?.(song.id);
-                          else onDownloadSong(song);
+                          else downloadOneSong(song);
                         }}
                         className={`absolute top-2 left-2 w-11 h-11 flex items-center justify-center rounded-lg border transition-colors ${
                           isDownloaded
