@@ -79,8 +79,11 @@ Connect with TeamViewer and open **PowerShell** in the karaoke-app folder.
    git checkout main
    git pull
    cd server
-   npm install
+   npm.cmd install
    ```
+
+   (Use `npm.cmd`, not `npm`. In PowerShell, plain `npm` fails with "running
+   scripts is disabled on this system" on most PCs.)
 
 2. Open the `.env` file in the karaoke-app folder (one level above `server`)
    in Notepad. Add these lines at the bottom, using the values from part 1:
