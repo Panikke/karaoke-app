@@ -16,6 +16,8 @@ Originally generated from
 | Understand how it's built, hosted, and deployed | **[PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md)** — the main runbook |
 | Build the Android APK | **[ANDROID.md](ANDROID.md)** |
 | Set up or fix the server on the Pi | **[server/DEPLOY.md](server/DEPLOY.md)** |
+| Move the server to the cloud (Hetzner + Cloudflare R2) | **[CLOUD-SETUP.md](CLOUD-SETUP.md)** |
+| Run the server on a Windows PC (Task Scheduler) | **[server/WINDOWS.md](server/WINDOWS.md)** |
 | Bulk-import songs from a folder | **[server/LIBRARY-SCAN-SETUP.md](server/LIBRARY-SCAN-SETUP.md)** |
 
 ## How it fits together

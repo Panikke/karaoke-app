@@ -1,7 +1,8 @@
 /**
- * Karaoke Upload API — runs on the Pi at port 3001
- * nginx proxies /api/ → http://127.0.0.1:3001
- * Audio files live at /var/www/karaoke-app/audio/
+ * Karaoke Upload API — listens on 127.0.0.1:3001 behind the Cloudflare tunnel.
+ * Song media lives either in AUDIO_DIR (served at /audio/) or, when R2_BUCKET
+ * is set, in Cloudflare R2 — see storage.js. Setting STATIC_DIR makes this
+ * process serve the built frontend too, so no nginx is needed.
  */
 
 import express from 'express';
@@ -10,6 +11,7 @@ import cors from 'cors';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import path from 'path';
+import os from 'os';
 import fs from 'fs/promises';
 import { existsSync, mkdirSync } from 'fs';
 import { randomUUID } from 'crypto';
@@ -17,6 +19,7 @@ import { execFile, exec } from 'child_process';
 import { promisify } from 'util';
 import { parseFile as parseAudioFile } from 'music-metadata';
 import dns from 'dns';
+import { createStorage } from './storage.js';
 
 // Force IPv4-first DNS resolution. Without this, Node 18+ may try IPv6 routes
 // to Supabase (Cloudflare-hosted) that fail on Pis without proper v6 routing,
@@ -31,6 +34,9 @@ dotenv.config({ path: path.resolve(import.meta.dirname, '..', '.env') });
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const PORT       = process.env.PORT || 3001;
+// Loopback only by default — cloudflared/nginx connect from this machine. Point
+// the tunnel at 127.0.0.1, not "localhost" (on Windows that can resolve to ::1).
+const HOST       = process.env.HOST || '127.0.0.1';
 const AUDIO_DIR  = process.env.AUDIO_DIR || '/var/www/karaoke-app/audio';
 const INCOMING_DIR = process.env.INCOMING_DIR || path.join(AUDIO_DIR, 'incoming');
 const FAILED_DIR   = path.join(AUDIO_DIR, 'failed');
@@ -44,10 +50,27 @@ if (!SUPABASE_URL || !SERVICE_ROLE_KEY) {
   process.exit(1);
 }
 
+// Built frontend (dist/) to serve from this process — optional
+const STATIC_DIR = process.env.STATIC_DIR || '';
+
+let storage;
+try {
+  storage = createStorage({ audioDir: AUDIO_DIR });
+} catch (err) {
+  console.error(err.message);
+  process.exit(1);
+}
+// Uploads land here first. Local mode writes straight into AUDIO_DIR; R2 mode
+// stages them on local disk, transcodes, then pushes the result to the bucket.
+const UPLOAD_DIR = storage.mode === 'r2'
+  ? path.join(os.tmpdir(), 'karaoke-uploads')
+  : AUDIO_DIR;
+
 // Ensure audio directories exist
 if (!existsSync(AUDIO_DIR))    mkdirSync(AUDIO_DIR,    { recursive: true });
 if (!existsSync(INCOMING_DIR)) mkdirSync(INCOMING_DIR, { recursive: true });
 if (!existsSync(FAILED_DIR))   mkdirSync(FAILED_DIR,   { recursive: true });
+if (!existsSync(UPLOAD_DIR))   mkdirSync(UPLOAD_DIR,   { recursive: true });
 
 // Service-role client — bypasses RLS for write operations
 const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
@@ -78,11 +101,18 @@ app.use('/audio', express.static(AUDIO_DIR, {
     res.setHeader('Access-Control-Allow-Origin', '*');
   },
 }));
+// R2 mode: anything not on local disk lives in the bucket. Redirect so app
+// builds that still use danserv.co.uk/audio/... keep playing.
+if (storage.mode === 'r2') {
+  app.use('/audio', (req, res) => {
+    res.redirect(302, `${storage.publicUrl}${req.path}`);
+  });
+}
 
 // ── Multer ────────────────────────────────────────────────────────────────────
 // Audio uploads → saved to disk with UUID filename
 const audioStorage = multer.diskStorage({
-  destination: AUDIO_DIR,
+  destination: UPLOAD_DIR,
   filename: (_req, file, cb) => {
     const ext = path.extname(file.originalname).toLowerCase();
     cb(null, `${randomUUID()}${ext}`);
@@ -221,8 +251,8 @@ app.post(
       const ext = path.extname(file.filename).toLowerCase();
       if (TRANSCODE_EXTS.has(ext)) {
         const mp3Filename = file.filename.replace(/\.[^.]+$/, '.mp3');
-        const inputPath   = path.join(AUDIO_DIR, file.filename);
-        const mp3Path     = path.join(AUDIO_DIR, mp3Filename);
+        const inputPath   = path.join(UPLOAD_DIR, file.filename);
+        const mp3Path     = path.join(UPLOAD_DIR, mp3Filename);
         try {
           console.log(`[UPLOAD] Transcoding ${file.filename} → ${mp3Filename}`);
           await transcodeToMp3(inputPath, mp3Path);
@@ -232,6 +262,15 @@ app.post(
         } catch (err) {
           console.warn(`[UPLOAD] Transcode failed, keeping original:`, err.message);
         }
+      }
+
+      try {
+        await storage.save(path.join(UPLOAD_DIR, audioFilename), audioFilename);
+      } catch (err) {
+        console.error(`[UPLOAD] Storing ${audioFilename} failed:`, err.message);
+        await fs.unlink(path.join(UPLOAD_DIR, audioFilename)).catch(() => {});
+        failed.push({ file: file.originalname, error: `Storage: ${err.message}` });
+        continue;
       }
 
       console.log(`[UPLOAD] Inserting "${meta.title || file.originalname}" into Supabase`);
@@ -253,7 +292,7 @@ app.post(
 
       if (error) {
         console.error(`[UPLOAD] Supabase insert failed:`, error.message);
-        await fs.unlink(path.join(AUDIO_DIR, audioFilename)).catch(() => {});
+        await storage.remove(audioFilename);
         failed.push({ file: file.originalname, error: error.message });
       } else {
         console.log(`[UPLOAD] Inserted OK, id:`, data.id);
@@ -289,12 +328,12 @@ app.post(
       .eq('id', id)
       .single();
     if (existing?.cover_art_filename) {
-      await fs.unlink(path.join(AUDIO_DIR, existing.cover_art_filename)).catch(() => {});
+      await storage.remove(existing.cover_art_filename);
     }
 
     const ext      = path.extname(req.file.originalname).toLowerCase() || '.jpg';
     const filename = `cover_${id}${ext}`;
-    await fs.writeFile(path.join(AUDIO_DIR, filename), req.file.buffer);
+    await storage.saveBuffer(req.file.buffer, filename);
 
     const { error } = await supabase
       .from('songs')
@@ -325,12 +364,12 @@ app.post(
       .eq('id', id)
       .single();
     if (existing?.lyrics_image_filename) {
-      await fs.unlink(path.join(AUDIO_DIR, existing.lyrics_image_filename)).catch(() => {});
+      await storage.remove(existing.lyrics_image_filename);
     }
 
     const ext      = path.extname(req.file.originalname).toLowerCase() || '.jpg';
     const filename = `lyrics_${id}${ext}`;
-    await fs.writeFile(path.join(AUDIO_DIR, filename), req.file.buffer);
+    await storage.saveBuffer(req.file.buffer, filename);
 
     const { error } = await supabase
       .from('songs')
@@ -360,7 +399,7 @@ app.delete('/api/songs/:id', requireAuth, requireEditor, asyncHandler(async (req
       song.cover_art_filename,
       song.lyrics_image_filename,
     ]) {
-      if (fn) await fs.unlink(path.join(AUDIO_DIR, fn)).catch(() => {});
+      if (fn) await storage.remove(fn);
     }
   }
 
@@ -394,7 +433,7 @@ app.delete('/api/songs', requireAuth, asyncHandler(async (req, res) => {
         song.cover_art_filename,
         song.lyrics_image_filename,
       ]) {
-        if (fn) await fs.unlink(path.join(AUDIO_DIR, fn)).catch(() => {});
+        if (fn) await storage.remove(fn);
       }
     }
   }
@@ -411,7 +450,7 @@ app.delete('/api/songs', requireAuth, asyncHandler(async (req, res) => {
 
 // ── Library Scan (Plex/Navidrome-style) ──────────────────────────────────────
 // Files are placed in INCOMING_DIR via SCP/Samba/SFTP, then this scans them,
-// extracts tags with music-metadata, moves to AUDIO_DIR, and inserts rows.
+// extracts tags with music-metadata, copies into storage, and inserts rows.
 
 const AUDIO_EXT_RE = /\.(mp3|wav|ogg|m4a|flac|aac)$/i;
 
@@ -484,7 +523,7 @@ app.get('/api/library/incoming', requireAuth, requireEditor, asyncHandler(async 
 /**
  * POST /api/library/scan
  * Body: { language: string, files?: string[] }   // files optional — defaults to all
- * Processes each file: extract tags, move to AUDIO_DIR with UUID name, save cover
+ * Processes each file: extract tags, store it under a UUID name, save cover
  * art if embedded, insert Supabase row. Failed files move to FAILED_DIR.
  */
 app.post('/api/library/scan', requireAuth, requireEditor, asyncHandler(async (req, res) => {
@@ -512,18 +551,18 @@ app.post('/api/library/scan', requireAuth, requireEditor, asyncHandler(async (re
         const artist      = tags.artist      || fallback.artist;
         const trackNumber = tags.trackNumber || fallback.trackNumber;
 
-        // Move file to permanent location with UUID filename
+        // Copy into storage with a UUID filename. The source stays in
+        // incoming/ until the DB insert succeeds, so a failure can't lose it.
         const ext          = path.extname(filename).toLowerCase();
         const newFilename  = `${randomUUID()}${ext}`;
-        const destPath     = path.join(AUDIO_DIR, newFilename);
-        await fs.rename(sourcePath, destPath);
+        await storage.save(sourcePath, newFilename, { keep: true });
 
         // Save embedded cover art if present
         let coverArtFilename = null;
         if (tags.coverArtData?.data) {
           const cExt = (tags.coverArtData.format || 'image/jpeg').replace('image/', '.');
           coverArtFilename = `cover_${path.parse(newFilename).name}${cExt}`;
-          await fs.writeFile(path.join(AUDIO_DIR, coverArtFilename), tags.coverArtData.data);
+          await storage.saveBuffer(Buffer.from(tags.coverArtData.data), coverArtFilename);
         }
 
         const { data, error } = await supabase
@@ -544,13 +583,12 @@ app.post('/api/library/scan', requireAuth, requireEditor, asyncHandler(async (re
           .single();
 
         if (error) {
-          // Roll back: move file back to incoming
-          await fs.rename(destPath, sourcePath).catch(() => {});
-          if (coverArtFilename) {
-            await fs.unlink(path.join(AUDIO_DIR, coverArtFilename)).catch(() => {});
-          }
+          // Roll back the stored copies; the original is still in incoming/
+          await storage.remove(newFilename);
+          if (coverArtFilename) await storage.remove(coverArtFilename);
           throw new Error(`Supabase: ${error.message}`);
         }
+        await fs.unlink(sourcePath).catch(() => {});
 
         console.log(`[SCAN] Imported "${title}" by ${artist}`);
         imported.push(data);
@@ -620,6 +658,15 @@ app.post('/api/library/sync', requireAuth, requireEditor, asyncHandler(async (_r
   }
 }));
 
+// ── Frontend ──────────────────────────────────────────────────────────────────
+// Serve the built app and send unknown non-API paths to index.html (SPA routes).
+if (STATIC_DIR) {
+  app.use(express.static(STATIC_DIR));
+  app.get(/^\/(?!api\/|audio\/).*/, (_req, res) => {
+    res.sendFile(path.join(STATIC_DIR, 'index.html'));
+  });
+}
+
 // ── Global error handler (catches multer & other middleware errors) ───────────
 app.use((err, req, res, _next) => {
   console.error(`[ERROR] ${req.method} ${req.path}:`, err.message);
@@ -642,9 +689,18 @@ process.on('uncaughtException', (err) => {
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
-app.listen(PORT, '127.0.0.1', () => {
-  console.log(`🎤 Karaoke API listening on http://127.0.0.1:${PORT}`);
+const server = app.listen(PORT, HOST, () => {
+  console.log(`🎤 Karaoke API listening on http://${HOST}:${PORT}`);
   console.log(`   Audio dir:    ${AUDIO_DIR}`);
   console.log(`   Incoming dir: ${INCOMING_DIR}`);
   console.log(`   Failed dir:   ${FAILED_DIR}`);
+  console.log(storage.mode === 'r2'
+    ? `   Media:        R2 bucket "${storage.bucket}" → ${storage.publicUrl}`
+    : '   Media:        local disk (audio dir)');
+  if (STATIC_DIR) console.log(`   Frontend:     ${STATIC_DIR}`);
+});
+// e.g. EADDRINUSE when a second copy is started — say so instead of a bare stack.
+server.on('error', (err) => {
+  console.error(`[FATAL] Could not listen on ${HOST}:${PORT}:`, err.message);
+  process.exit(1);
 });

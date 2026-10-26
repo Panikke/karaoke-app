@@ -4,14 +4,13 @@
  */
 
 import { supabase } from './supabase';
-import { API_BASE } from './config';
+import { API_BASE, MEDIA_BASE } from './config';
 import type { Song } from '../app/App';
 import type { LyricLine } from '../utils/lrcParser';
 
-// Audio files are served by nginx from the Pi filesystem.
-// API_BASE is '' for the web build (relative, same-origin) and the absolute
-// server URL for the Capacitor/APK build.
-const AUDIO_BASE = `${API_BASE}/audio`;
+// Media comes from the R2 bucket when VITE_MEDIA_BASE is set, otherwise from
+// the API server's /audio/ route — see config.ts.
+const AUDIO_BASE = MEDIA_BASE;
 
 // ── DB shape ──────────────────────────────────────────────────────────────────
 interface DbSong {
