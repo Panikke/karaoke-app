@@ -9,3 +9,13 @@
  * so VITE_API_BASE points at the live server and every call becomes absolute.
  */
 export const API_BASE: string = import.meta.env.VITE_API_BASE ?? '';
+
+/**
+ * Where song media (audio, covers, lyrics images) is fetched from.
+ *
+ * Set VITE_MEDIA_BASE to the R2 bucket's public domain (e.g.
+ * https://media.danserv.co.uk) so playback doesn't depend on the API server.
+ * Unset, media comes from the API server's /audio/ route as before.
+ */
+export const MEDIA_BASE: string =
+  (import.meta.env.VITE_MEDIA_BASE || `${API_BASE}/audio`).replace(/\/+$/, '');
