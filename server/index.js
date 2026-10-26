@@ -31,6 +31,9 @@ dotenv.config({ path: path.resolve(import.meta.dirname, '..', '.env') });
 
 // ── Config ────────────────────────────────────────────────────────────────────
 const PORT       = process.env.PORT || 3001;
+// Loopback only by default — cloudflared/nginx connect from this machine. Point
+// the tunnel at 127.0.0.1, not "localhost" (on Windows that can resolve to ::1).
+const HOST       = process.env.HOST || '127.0.0.1';
 const AUDIO_DIR  = process.env.AUDIO_DIR || '/var/www/karaoke-app/audio';
 const INCOMING_DIR = process.env.INCOMING_DIR || path.join(AUDIO_DIR, 'incoming');
 const FAILED_DIR   = path.join(AUDIO_DIR, 'failed');
@@ -642,9 +645,14 @@ process.on('uncaughtException', (err) => {
 });
 
 // ── Start ─────────────────────────────────────────────────────────────────────
-app.listen(PORT, '127.0.0.1', () => {
-  console.log(`🎤 Karaoke API listening on http://127.0.0.1:${PORT}`);
+const server = app.listen(PORT, HOST, () => {
+  console.log(`🎤 Karaoke API listening on http://${HOST}:${PORT}`);
   console.log(`   Audio dir:    ${AUDIO_DIR}`);
   console.log(`   Incoming dir: ${INCOMING_DIR}`);
   console.log(`   Failed dir:   ${FAILED_DIR}`);
+});
+// e.g. EADDRINUSE when a second copy is started — say so instead of a bare stack.
+server.on('error', (err) => {
+  console.error(`[FATAL] Could not listen on ${HOST}:${PORT}:`, err.message);
+  process.exit(1);
 });
